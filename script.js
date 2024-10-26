@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.01, 100);
     camera.position.set(0, 5, 3);
-    camera.lookAt(0, 0, 0);
+    camera.lookAt(0, 0, 0);  // Adjusted to move torus up
     camera.updateProjectionMatrix();
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -15,8 +15,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 1);
     scene.add(ambientLight);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-    directionalLight.position.set(100, 45, 100);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(15, 25, 15);  // Moved light further back
     scene.add(directionalLight);
 
     // Set up groups
@@ -48,15 +48,15 @@ document.addEventListener('DOMContentLoaded', () => {
         GIVEN_CELL: 0xD3D3D3
     };
 
-    // Camera controls - Updated for mobile
+    // Camera controls
     const controls = new THREE.TrackballControls(camera, renderer.domElement);
-    controls.rotateSpeed = 3.0;  // Reduced for better touch control
+    controls.rotateSpeed = 3.0;
     controls.dynamicDampingFactor = 0.3;
-    controls.noZoom = false;     // Allow zooming for mobile
+    controls.noZoom = false;
     controls.noPan = true;
-    controls.target.set(0, 0, 0);
-    controls.minDistance = 2;    // Limit how close you can zoom
-    controls.maxDistance = 10;   // Limit how far you can zoom
+    controls.target.set(0, 0.5, 0);  // Adjusted to match camera lookAt
+    controls.minDistance = 2;
+    controls.maxDistance = 10;
     controls.update();
 
     // Game state variables
@@ -66,39 +66,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const displayedNumbers = {};
     let sudokuGrid = Array(9).fill().map(() => Array(9).fill(null));
 
-    // UI Setup with rows
+    // UI Setup with new layout
     const controlPanel = document.createElement('div');
     controlPanel.className = 'control-panel';
     document.body.appendChild(controlPanel);
 
-    // Create top row for utility buttons
-    const utilityButtonRow = document.createElement('div');
-    utilityButtonRow.className = 'button-row';
-    controlPanel.appendChild(utilityButtonRow);
-
-    // Mode toggle button
-    const modeToggle = document.createElement('button');
-    modeToggle.innerText = "Toggle: Numbers";
-    modeToggle.addEventListener('click', () => {
-        currentInputMode = currentInputMode === "numbers" ? "additionalNumbers" : "numbers";
-        modeToggle.innerText = `Toggle: ${currentInputMode === "numbers" ? "Numbers" : "Additional Numbers"}`;
-    });
-    utilityButtonRow.appendChild(modeToggle);
-
-    // Erase button
-    const eraseButton = document.createElement('button');
-    eraseButton.innerText = "Erase";
-    eraseButton.addEventListener('click', () => {
-        if (selectedCell) {
-            eraseCell(selectedCell.cellName);
-        }
-    });
-    utilityButtonRow.appendChild(eraseButton);
-
-    // Create bottom row for number buttons
-    const numberButtonRow = document.createElement('div');
-    numberButtonRow.className = 'button-row';
-    controlPanel.appendChild(numberButtonRow);
+    // Create number pad container
+    const numberPad = document.createElement('div');
+    numberPad.className = 'number-pad';
+    controlPanel.appendChild(numberPad);
 
     // Number buttons
     for (let i = 1; i <= 9; i++) {
@@ -109,8 +85,51 @@ document.addEventListener('DOMContentLoaded', () => {
                 inputNumber(i);
             }
         });
-        numberButtonRow.appendChild(button);
+        // Add touch event listener for mobile
+        button.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (selectedCell) {
+                inputNumber(i);
+            }
+        }, { passive: false });
+        numberPad.appendChild(button);
     }
+
+    // Create utility buttons container
+    const utilityButtons = document.createElement('div');
+    utilityButtons.className = 'utility-buttons';
+    controlPanel.appendChild(utilityButtons);
+
+    // Mode toggle button
+    const modeToggle = document.createElement('button');
+    modeToggle.innerText = "Toggle: Numbers";
+    modeToggle.addEventListener('click', () => {
+        currentInputMode = currentInputMode === "numbers" ? "additionalNumbers" : "numbers";
+        modeToggle.innerText = `Toggle: ${currentInputMode === "numbers" ? "Numbers" : "Additional Numbers"}`;
+    });
+    modeToggle.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        currentInputMode = currentInputMode === "numbers" ? "additionalNumbers" : "numbers";
+        modeToggle.innerText = `Toggle: ${currentInputMode === "numbers" ? "Numbers" : "Additional Numbers"}`;
+    }, { passive: false });
+    utilityButtons.appendChild(modeToggle);
+
+    // Erase button
+    const eraseButton = document.createElement('button');
+    eraseButton.innerText = "Erase";
+    eraseButton.addEventListener('click', () => {
+        if (selectedCell) {
+            eraseCell(selectedCell.cellName);
+        }
+    });
+    eraseButton.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (selectedCell) {
+            eraseCell(selectedCell.cellName);
+        }
+    }, { passive: false });
+    utilityButtons.appendChild(eraseButton);
+    // Helper Functions
     function checkSolution() {
         // Check if puzzle is complete (no empty cells)
         for (let row = 0; row < 9; row++) {
@@ -541,7 +560,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Update window resize handler
     window.addEventListener('resize', () => {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
