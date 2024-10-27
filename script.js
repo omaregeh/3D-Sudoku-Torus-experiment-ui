@@ -50,13 +50,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Camera controls
     const controls = new THREE.TrackballControls(camera, renderer.domElement);
-    controls.rotateSpeed = 3.0;
+    controls.rotateSpeed = 5.0;
     controls.dynamicDampingFactor = 0.3;
-    controls.noZoom = false;
+    controls.noZoom = true;
     controls.noPan = true;
-    controls.target.set(0, 0.5, 0);  // Adjusted to match camera lookAt
-    controls.minDistance = 2;
-    controls.maxDistance = 10;
+    controls.target.set(0, 0, 0);  // Adjusted to match camera lookAt
     controls.update();
 
     // Game state variables
