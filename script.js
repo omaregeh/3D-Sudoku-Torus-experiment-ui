@@ -3,13 +3,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Set up the scene, camera, and renderer
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.01, 100);
-    camera.position.set(0, 5, 3);
-    camera.lookAt(0, 0, 0);  // Adjusted to move torus up
+    const camera = new THREE.PerspectiveCamera(35, (window.innerWidth * 0.7) / window.innerHeight, 0.01, 100);
+    camera.position.set(0, 6, 3);
+    camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(window.innerWidth * 0.7, window.innerHeight);  // Take up 70% of width
     document.body.appendChild(renderer.domElement);
     
     // Lighting
@@ -31,7 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
     bordersGroup.scale.set(5, 5, 5);
     numbersGroup.scale.set(5, 5, 5);
     notesGroup.scale.set(5, 5, 5);
-
+    
     // Add groups to scene
     scene.add(cellsGroup);
     scene.add(bordersGroup);
@@ -559,9 +559,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.aspect = (window.innerWidth * 0.7) / window.innerHeight;
         camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setSize(window.innerWidth * 0.7, window.innerHeight);
         controls.handleResize();
     });
 
