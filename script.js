@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Set up the scene, camera, and renderer
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(35, (window.innerWidth * 0.7) / window.innerHeight, 0.01, 100);
-    camera.position.set(0, 6, 3);
+    camera.position.set(0, 3, 1.5);
     camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
 
