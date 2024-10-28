@@ -26,11 +26,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const numbersGroup = new THREE.Group();
     const notesGroup = new THREE.Group();
 
+    // Get the scaling factor based on screen size
+    const scaleFactor = window.innerWidth < 768 ? 6.5 : 5;  // Larger scale for mobile
+
     // Scale all groups
-    cellsGroup.scale.set(5, 5, 5);
-    bordersGroup.scale.set(5, 5, 5);
-    numbersGroup.scale.set(5, 5, 5);
-    notesGroup.scale.set(5, 5, 5);
+    cellsGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
+    bordersGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
+    numbersGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
+    notesGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
     
     // Add groups to scene
     scene.add(cellsGroup);
@@ -559,6 +562,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.addEventListener('resize', () => {
+        const newScaleFactor = window.innerWidth < 768 ? 6.5 : 5;
+        cellsGroup.scale.set(newScaleFactor, newScaleFactor, newScaleFactor);
+        bordersGroup.scale.set(newScaleFactor, newScaleFactor, newScaleFactor);
+        numbersGroup.scale.set(newScaleFactor, newScaleFactor, newScaleFactor);
+        notesGroup.scale.set(newScaleFactor, newScaleFactor, newScaleFactor);
+        
         camera.aspect = (window.innerWidth * 0.7) / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth * 0.7, window.innerHeight);
