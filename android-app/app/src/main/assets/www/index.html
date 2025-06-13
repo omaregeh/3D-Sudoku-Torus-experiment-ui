@@ -22,6 +22,12 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/build/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/loaders/GLTFLoader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/controls/TrackballControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sudoku@0.0.3/dist-web/index.js"></script>
+    <script>
+        if (typeof window !== 'undefined' && typeof sudoku !== 'undefined') {
+            window.sudoku = sudoku;
+        }
+    </script>
     <script src="script.js"></script>
 </body>
 </html>

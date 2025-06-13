@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     camera.updateProjectionMatrix();
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth * 0.7, window.innerHeight);  // Take up 70% of width
+    renderer.setSize(window.innerWidth * 0.7, window.innerHeight);
     document.body.appendChild(renderer.domElement);
     
     // Lighting
@@ -63,9 +63,41 @@ document.addEventListener('DOMContentLoaded', () => {
     // Game state variables
     let selectedCell = null;
     let currentInputMode = "numbers";
+    let currentDifficulty = 'Beginner';
+    let gameTimer = 0;
+    let timerInterval = null;
+    let gameStartTime = null;
+    let gameInProgress = false;
     const editableCells = new Set();
     const displayedNumbers = {};
     let sudokuGrid = Array(9).fill().map(() => Array(9).fill(null));
+    let gameStats = JSON.parse(localStorage.getItem('sudokuStats')) || {
+        gamesPlayed: 0,
+        bestTimes: {},
+        currentStreak: 0,
+        achievements: []
+    };
+
+    // Create modern game header
+    const gameHeader = document.createElement('div');
+    gameHeader.className = 'game-header';
+    gameHeader.innerHTML = `
+        <div class="difficulty-selector">
+            <button class="difficulty-btn active" data-difficulty="Beginner">Beginner</button>
+            <button class="difficulty-btn" data-difficulty="Intermediate">Intermediate</button>
+            <button class="difficulty-btn" data-difficulty="Expert">Expert</button>
+            <button class="difficulty-btn" data-difficulty="Master">Master</button>
+        </div>
+        <div class="timer-display">00:00</div>
+    `;
+    document.body.appendChild(gameHeader);
+
+    // Create floating action button for new game
+    const fab = document.createElement('button');
+    fab.className = 'fab';
+    fab.innerHTML = '🎲';
+    fab.title = 'New Game';
+    document.body.appendChild(fab);
 
     // UI Setup with new layout
     const controlPanel = document.createElement('div');
@@ -151,6 +183,249 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         return true;
+    }
+
+    function generatePuzzle(difficulty = 'Beginner') {
+        const difficultyRanges = {
+            'Beginner': [0, 1],
+            'Intermediate': [1, 2.5], 
+            'Expert': [2.5, 4],
+            'Master': [4, 10]
+        };
+        
+        const [minRating, maxRating] = difficultyRanges[difficulty];
+        let puzzle, rating, attempts = 0;
+        
+        do {
+            if (typeof window !== 'undefined' && window.sudoku) {
+                puzzle = window.sudoku.makepuzzle();
+                rating = window.sudoku.ratepuzzle(puzzle, 4);
+            } else {
+                puzzle = Array(81).fill(null);
+                for (let i = 0; i < 81; i++) {
+                    if (Math.random() < 0.3) {
+                        puzzle[i] = Math.floor(Math.random() * 9) + 1;
+                    }
+                }
+                rating = minRating + Math.random() * (maxRating - minRating);
+            }
+            attempts++;
+        } while ((rating < minRating || rating >= maxRating) && attempts < 50);
+        
+        let solution;
+        if (typeof window !== 'undefined' && window.sudoku) {
+            solution = window.sudoku.solvepuzzle(puzzle);
+        } else {
+            solution = generateValidSolution();
+        }
+        
+        return { 
+            sudokuBoard: convertToGrid(puzzle), 
+            sudokuSolution: convertToGrid(solution),
+            rating: rating
+        };
+    }
+    
+    function convertToGrid(flatArray) {
+        const grid = [];
+        for (let i = 0; i < 9; i++) {
+            grid.push(flatArray.slice(i * 9, (i + 1) * 9).map(cell => cell === null ? 0 : cell));
+        }
+        return grid;
+    }
+
+    function generateValidSolution() {
+        const solution = [
+            [4, 8, 3, 9, 2, 1, 6, 5, 7],
+            [9, 6, 7, 3, 4, 5, 8, 2, 1],
+            [2, 5, 1, 8, 7, 6, 4, 9, 3],
+            [5, 4, 8, 1, 3, 2, 9, 7, 6],
+            [7, 2, 9, 5, 6, 4, 1, 3, 8],
+            [1, 3, 6, 7, 9, 8, 2, 4, 5],
+            [3, 7, 2, 6, 8, 9, 5, 1, 4],
+            [8, 1, 4, 2, 5, 3, 7, 6, 9],
+            [6, 9, 5, 4, 1, 7, 3, 8, 2]
+        ];
+        return solution.flat();
+    }
+
+    function startTimer() {
+        if (!gameInProgress) {
+            gameStartTime = Date.now();
+            gameInProgress = true;
+            timerInterval = setInterval(updateTimer, 1000);
+        }
+    }
+
+    function stopTimer() {
+        if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
+        gameInProgress = false;
+    }
+
+    function updateTimer() {
+        if (gameStartTime) {
+            gameTimer = Math.floor((Date.now() - gameStartTime) / 1000);
+            document.querySelector('.timer-display').textContent = formatTime(gameTimer);
+        }
+    }
+
+    function formatTime(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    function updateGameStats(difficulty, completionTime) {
+        gameStats.gamesPlayed++;
+        gameStats.currentStreak++;
+        
+        if (!gameStats.bestTimes[difficulty] || completionTime < gameStats.bestTimes[difficulty]) {
+            gameStats.bestTimes[difficulty] = completionTime;
+            showAchievement(`New ${difficulty} record: ${formatTime(completionTime)}!`);
+        }
+        
+        checkAchievements();
+        localStorage.setItem('sudokuStats', JSON.stringify(gameStats));
+    }
+    
+    function checkAchievements() {
+        const achievements = [
+            { id: 'first_win', name: 'First Victory', condition: () => gameStats.gamesPlayed === 1 },
+            { id: 'speed_demon', name: 'Speed Demon', condition: () => gameStats.bestTimes.Expert && gameStats.bestTimes.Expert < 300 },
+            { id: 'streak_5', name: 'Hot Streak', condition: () => gameStats.currentStreak >= 5 },
+            { id: 'master_solver', name: 'Master Solver', condition: () => gameStats.bestTimes.Master }
+        ];
+        
+        achievements.forEach(achievement => {
+            if (!gameStats.achievements.includes(achievement.id) && achievement.condition()) {
+                gameStats.achievements.push(achievement.id);
+                showAchievement(`Achievement Unlocked: ${achievement.name}!`);
+            }
+        });
+    }
+
+    function showAchievement(message) {
+        const achievement = document.createElement('div');
+        achievement.className = 'achievement-toast';
+        achievement.textContent = message;
+        document.body.appendChild(achievement);
+        
+        setTimeout(() => {
+            achievement.classList.add('show');
+        }, 100);
+        
+        setTimeout(() => {
+            achievement.classList.remove('show');
+            setTimeout(() => {
+                if (document.body.contains(achievement)) {
+                    document.body.removeChild(achievement);
+                }
+            }, 300);
+        }, 3000);
+    }
+
+    function showCelebration(completionTime) {
+        stopTimer();
+        
+        const celebration = document.createElement('div');
+        celebration.className = 'celebration-overlay';
+        celebration.innerHTML = `
+            <div class="celebration-content">
+                <div class="celebration-icon">🎉</div>
+                <h2>Puzzle Solved!</h2>
+                <p class="completion-time">Time: ${formatTime(completionTime)}</p>
+                <p class="difficulty-label">Difficulty: ${currentDifficulty}</p>
+                <div class="celebration-stats">
+                    <span>Games Played: ${gameStats.gamesPlayed}</span>
+                    <span>Current Streak: ${gameStats.currentStreak}</span>
+                </div>
+                <p class="next-puzzle-text">Next puzzle loading...</p>
+            </div>
+        `;
+        document.body.appendChild(celebration);
+        
+        createConfetti();
+        
+        setTimeout(() => {
+            if (document.body.contains(celebration)) {
+                document.body.removeChild(celebration);
+            }
+        }, 3000);
+    }
+    
+    function createConfetti() {
+        for (let i = 0; i < 50; i++) {
+            const confetti = document.createElement('div');
+            confetti.className = 'confetti';
+            confetti.style.left = Math.random() * 100 + '%';
+            confetti.style.animationDelay = Math.random() * 3 + 's';
+            confetti.style.backgroundColor = `hsl(${Math.random() * 360}, 70%, 60%)`;
+            document.body.appendChild(confetti);
+            
+            setTimeout(() => {
+                if (document.body.contains(confetti)) {
+                    document.body.removeChild(confetti);
+                }
+            }, 3000);
+        }
+    }
+
+    function startNewGame(difficulty = currentDifficulty) {
+        stopTimer();
+        gameTimer = 0;
+        document.querySelector('.timer-display').textContent = '00:00';
+        
+        currentDifficulty = difficulty;
+        
+        document.querySelectorAll('.difficulty-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.difficulty === difficulty);
+        });
+        
+        clearGame();
+        
+        const puzzleData = generatePuzzle(difficulty);
+        sudokuSolution = puzzleData.sudokuSolution;
+        sudokuGrid = puzzleData.sudokuBoard.map(row => [...row]);
+        
+        loadGameWithData(puzzleData);
+    }
+
+    function clearGame() {
+        editableCells.clear();
+        Object.keys(displayedNumbers).forEach(key => delete displayedNumbers[key]);
+        
+        numbersGroup.children.slice().forEach(child => {
+            numbersGroup.remove(child);
+            child.traverse((node) => {
+                if (node.isMesh) {
+                    node.geometry.dispose();
+                    node.material.dispose();
+                }
+            });
+        });
+        
+        notesGroup.children.slice().forEach(child => {
+            notesGroup.remove(child);
+            child.traverse((node) => {
+                if (node.isMesh) {
+                    node.geometry.dispose();
+                    node.material.dispose();
+                }
+            });
+        });
+        
+        cellsGroup.children.forEach(cell => {
+            cell.traverse(child => {
+                if (child.isMesh) {
+                    child.material.color.setHex(COLORS.DEFAULT_CELL);
+                }
+            });
+        });
+        
+        selectedCell = null;
     }
 
     function getCellCoordinates(cellName) {
@@ -267,14 +542,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     // Load game data
     Promise.all([
-        fetch('partsList.json').then(response => response.json()),
-        fetch('sudokuGame.json').then(response => response.json())
-    ]).then(([partsListData, sudokuGameData]) => {
-        const { borders, cells, numbers } = partsListData;
-        const { sudokuBoard, sudokuSolution: solution } = sudokuGameData;
-
-        sudokuSolution = solution;
-        sudokuGrid = sudokuBoard.map(row => [...row]);
+        fetch('partsList.json').then(response => response.json())
+    ]).then(([partsListData]) => {
+        const { borders, cells } = partsListData;
 
         // Load borders
         borders.forEach(border => {
@@ -299,8 +569,19 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        setupSudokuMechanics(cells, sudokuBoard);
+        setTimeout(() => {
+            startNewGame('Beginner');
+        }, 1000);
     }).catch(error => console.error('Error loading game data:', error));
+
+    function loadGameWithData(gameData) {
+        const { sudokuBoard } = gameData;
+        
+        fetch('partsList.json').then(response => response.json()).then(partsListData => {
+            const { cells } = partsListData;
+            setupSudokuMechanics(cells, sudokuBoard);
+        });
+    }
 
     function setupSudokuMechanics(cells, sudokuBoard) {
         sudokuBoard.forEach((row, rowIndex) => {
@@ -377,6 +658,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function inputNumber(number) {
         if (!selectedCell || !editableCells.has(selectedCell.cellName)) return;
         
+        startTimer();
+        
         const cellData = displayedNumbers[selectedCell.cellName];
         if (!cellData || cellData.isGiven) return;
 
@@ -434,31 +717,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Check if puzzle is solved
             if (checkSolution()) {
-                const message = document.createElement('div');
-                message.style.position = 'absolute';
-                message.style.top = '50%';
-                message.style.left = '50%';
-                message.style.transform = 'translate(-50%, -50%)';
-                message.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
-                message.style.padding = '20px';
-                message.style.borderRadius = '10px';
-                message.style.boxShadow = '0 0 10px rgba(0, 0, 0, 0.5)';
-                message.style.fontSize = '24px';
-                message.style.color = '#000';
-                message.style.textAlign = 'center';
-                message.innerHTML = 'Congratulations!<br>You solved the puzzle!';
-
-                const closeButton = document.createElement('button');
-                closeButton.innerHTML = 'Close';
-                closeButton.style.marginTop = '10px';
-                closeButton.style.padding = '5px 15px';
-                closeButton.style.fontSize = '16px';
-                closeButton.addEventListener('click', () => {
-                    document.body.removeChild(message);
-                });
-                message.appendChild(closeButton);
-
-                document.body.appendChild(message);
+                const completionTime = gameTimer;
+                updateGameStats(currentDifficulty, completionTime);
+                showCelebration(completionTime);
+                
+                setTimeout(() => {
+                    startNewGame(currentDifficulty);
+                }, 3000);
             }
         } else {
             // First remove any regular number if it exists
@@ -559,6 +824,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (selectedCell && key >= '1' && key <= '9') {
             inputNumber(parseInt(key));
         }
+    });
+
+    document.querySelectorAll('.difficulty-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const difficulty = btn.dataset.difficulty;
+            startNewGame(difficulty);
+        });
+    });
+
+    fab.addEventListener('click', () => {
+        startNewGame(currentDifficulty);
     });
 
     window.addEventListener('resize', () => {
