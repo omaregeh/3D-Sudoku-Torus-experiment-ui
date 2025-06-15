@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     camera.updateProjectionMatrix();
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth * 0.7, window.innerHeight);  // Take up 70% of width
+    renderer.setSize(window.innerWidth * 0.7, window.innerHeight);
     document.body.appendChild(renderer.domElement);
     
     // Lighting
@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const bordersGroup = new THREE.Group();
     const numbersGroup = new THREE.Group();
     const notesGroup = new THREE.Group();
+    const decorativeGroup = new THREE.Group();
 
     // Get the scaling factor based on screen size
     const scaleFactor = window.innerWidth < 768 ? 6.5 : 5;  // Larger scale for mobile
@@ -34,12 +35,14 @@ document.addEventListener('DOMContentLoaded', () => {
     bordersGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
     numbersGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
     notesGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
+    decorativeGroup.scale.set(scaleFactor * 0.3, scaleFactor * 0.3, scaleFactor * 0.3); // Smaller scale for golf ball
     
     // Add groups to scene
     scene.add(cellsGroup);
     scene.add(bordersGroup);
     scene.add(numbersGroup);
     scene.add(notesGroup);
+    scene.add(decorativeGroup);
 
     // Constants for colors
     const COLORS = {
@@ -63,9 +66,41 @@ document.addEventListener('DOMContentLoaded', () => {
     // Game state variables
     let selectedCell = null;
     let currentInputMode = "numbers";
+    let currentDifficulty = 'Beginner';
+    let gameTimer = 0;
+    let timerInterval = null;
+    let gameStartTime = null;
+    let gameInProgress = false;
     const editableCells = new Set();
     const displayedNumbers = {};
     let sudokuGrid = Array(9).fill().map(() => Array(9).fill(null));
+    let gameStats = JSON.parse(localStorage.getItem('sudokuStats')) || {
+        gamesPlayed: 0,
+        bestTimes: {},
+        currentStreak: 0,
+        achievements: []
+    };
+
+    // Create modern game header
+    const gameHeader = document.createElement('div');
+    gameHeader.className = 'game-header';
+    gameHeader.innerHTML = `
+        <div class="difficulty-selector">
+            <button class="difficulty-btn active" data-difficulty="Beginner">Beginner</button>
+            <button class="difficulty-btn" data-difficulty="Intermediate">Intermediate</button>
+            <button class="difficulty-btn" data-difficulty="Expert">Expert</button>
+            <button class="difficulty-btn" data-difficulty="Master">Master</button>
+        </div>
+        <div class="timer-display">00:00</div>
+    `;
+    document.body.appendChild(gameHeader);
+
+    // Create floating action button for new game
+    const fab = document.createElement('button');
+    fab.className = 'fab';
+    fab.innerHTML = '🎲';
+    fab.title = 'New Game';
+    document.body.appendChild(fab);
 
     // UI Setup with new layout
     const controlPanel = document.createElement('div');
@@ -151,6 +186,284 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         return true;
+    }
+
+    function isValidSudokuMove(grid, row, col, num) {
+        for (let x = 0; x < 9; x++) {
+            if (x !== col && grid[row][x] === num) return false;
+        }
+        
+        for (let x = 0; x < 9; x++) {
+            if (x !== row && grid[x][col] === num) return false;
+        }
+        
+        const startRow = Math.floor(row / 3) * 3;
+        const startCol = Math.floor(col / 3) * 3;
+        for (let i = 0; i < 3; i++) {
+            for (let j = 0; j < 3; j++) {
+                const checkRow = startRow + i;
+                const checkCol = startCol + j;
+                if ((checkRow !== row || checkCol !== col) && grid[checkRow][checkCol] === num) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+    
+    function generatePuzzle(difficulty = 'Beginner') {
+        const difficultySettings = {
+            'Beginner': { minClues: 45, maxClues: 50 },
+            'Intermediate': { minClues: 35, maxClues: 44 }, 
+            'Expert': { minClues: 25, maxClues: 34 },
+            'Master': { minClues: 17, maxClues: 24 }
+        };
+        
+        const { minClues, maxClues } = difficultySettings[difficulty];
+        
+        const solution = generateValidCompleteSolution();
+        
+        // Create puzzle by removing numbers
+        const puzzle = solution.map(row => [...row]);
+        const targetClues = minClues + Math.floor(Math.random() * (maxClues - minClues + 1));
+        const cellsToRemove = 81 - targetClues;
+        
+        const positions = [];
+        for (let row = 0; row < 9; row++) {
+            for (let col = 0; col < 9; col++) {
+                positions.push([row, col]);
+            }
+        }
+        
+        for (let i = positions.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [positions[i], positions[j]] = [positions[j], positions[i]];
+        }
+        
+        // Remove cells
+        for (let i = 0; i < cellsToRemove && i < positions.length; i++) {
+            const [row, col] = positions[i];
+            puzzle[row][col] = 0;
+        }
+        
+        return { 
+            sudokuBoard: puzzle, 
+            sudokuSolution: solution,
+            rating: (maxClues - targetClues) / (maxClues - minClues) * 4
+        };
+    }
+    
+    function convertToGrid(flatArray) {
+        const grid = [];
+        for (let i = 0; i < 9; i++) {
+            grid.push(flatArray.slice(i * 9, (i + 1) * 9).map(cell => cell === null ? 0 : cell));
+        }
+        return grid;
+    }
+
+    function generateValidCompleteSolution() {
+        const baseSolution = [
+            [5, 3, 4, 6, 7, 8, 9, 1, 2],
+            [6, 7, 2, 1, 9, 5, 3, 4, 8],
+            [1, 9, 8, 3, 4, 2, 5, 6, 7],
+            [8, 5, 9, 7, 6, 1, 4, 2, 3],
+            [4, 2, 6, 8, 5, 3, 7, 9, 1],
+            [7, 1, 3, 9, 2, 4, 8, 5, 6],
+            [9, 6, 1, 5, 3, 7, 2, 8, 4],
+            [2, 8, 7, 4, 1, 9, 6, 3, 5],
+            [3, 4, 5, 2, 8, 6, 1, 7, 9]
+        ];
+        
+        const solution = baseSolution.map(row => [...row]);
+        
+        for (let block = 0; block < 3; block++) {
+            if (Math.random() < 0.5) {
+                const row1 = block * 3 + Math.floor(Math.random() * 3);
+                const row2 = block * 3 + Math.floor(Math.random() * 3);
+                [solution[row1], solution[row2]] = [solution[row2], solution[row1]];
+            }
+        }
+        
+        return solution;
+    }
+
+    function startTimer() {
+        if (!gameInProgress) {
+            gameStartTime = Date.now();
+            gameInProgress = true;
+            timerInterval = setInterval(updateTimer, 1000);
+        }
+    }
+
+    function stopTimer() {
+        if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
+        gameInProgress = false;
+    }
+
+    function updateTimer() {
+        if (gameStartTime) {
+            gameTimer = Math.floor((Date.now() - gameStartTime) / 1000);
+            document.querySelector('.timer-display').textContent = formatTime(gameTimer);
+        }
+    }
+
+    function formatTime(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    function updateGameStats(difficulty, completionTime) {
+        gameStats.gamesPlayed++;
+        gameStats.currentStreak++;
+        
+        if (!gameStats.bestTimes[difficulty] || completionTime < gameStats.bestTimes[difficulty]) {
+            gameStats.bestTimes[difficulty] = completionTime;
+            showAchievement(`New ${difficulty} record: ${formatTime(completionTime)}!`);
+        }
+        
+        checkAchievements();
+        localStorage.setItem('sudokuStats', JSON.stringify(gameStats));
+    }
+    
+    function checkAchievements() {
+        const achievements = [
+            { id: 'first_win', name: 'First Victory', condition: () => gameStats.gamesPlayed === 1 },
+            { id: 'speed_demon', name: 'Speed Demon', condition: () => gameStats.bestTimes.Expert && gameStats.bestTimes.Expert < 300 },
+            { id: 'streak_5', name: 'Hot Streak', condition: () => gameStats.currentStreak >= 5 },
+            { id: 'master_solver', name: 'Master Solver', condition: () => gameStats.bestTimes.Master }
+        ];
+        
+        achievements.forEach(achievement => {
+            if (!gameStats.achievements.includes(achievement.id) && achievement.condition()) {
+                gameStats.achievements.push(achievement.id);
+                showAchievement(`Achievement Unlocked: ${achievement.name}!`);
+            }
+        });
+    }
+
+    function showAchievement(message) {
+        const achievement = document.createElement('div');
+        achievement.className = 'achievement-toast';
+        achievement.textContent = message;
+        document.body.appendChild(achievement);
+        
+        setTimeout(() => {
+            achievement.classList.add('show');
+        }, 100);
+        
+        setTimeout(() => {
+            achievement.classList.remove('show');
+            setTimeout(() => {
+                if (document.body.contains(achievement)) {
+                    document.body.removeChild(achievement);
+                }
+            }, 300);
+        }, 3000);
+    }
+
+    function showCelebration(completionTime) {
+        stopTimer();
+        
+        const celebration = document.createElement('div');
+        celebration.className = 'celebration-overlay';
+        celebration.innerHTML = `
+            <div class="celebration-content">
+                <div class="celebration-icon">🎉</div>
+                <h2>Puzzle Solved!</h2>
+                <p class="completion-time">Time: ${formatTime(completionTime)}</p>
+                <p class="difficulty-label">Difficulty: ${currentDifficulty}</p>
+                <div class="celebration-stats">
+                    <span>Games Played: ${gameStats.gamesPlayed}</span>
+                    <span>Current Streak: ${gameStats.currentStreak}</span>
+                </div>
+                <p class="next-puzzle-text">Next puzzle loading...</p>
+            </div>
+        `;
+        document.body.appendChild(celebration);
+        
+        createConfetti();
+        
+        setTimeout(() => {
+            if (document.body.contains(celebration)) {
+                document.body.removeChild(celebration);
+            }
+        }, 3000);
+    }
+    
+    function createConfetti() {
+        for (let i = 0; i < 50; i++) {
+            const confetti = document.createElement('div');
+            confetti.className = 'confetti';
+            confetti.style.left = Math.random() * 100 + '%';
+            confetti.style.animationDelay = Math.random() * 3 + 's';
+            confetti.style.backgroundColor = `hsl(${Math.random() * 360}, 70%, 60%)`;
+            document.body.appendChild(confetti);
+            
+            setTimeout(() => {
+                if (document.body.contains(confetti)) {
+                    document.body.removeChild(confetti);
+                }
+            }, 3000);
+        }
+    }
+
+    function startNewGame(difficulty = currentDifficulty) {
+        stopTimer();
+        gameTimer = 0;
+        document.querySelector('.timer-display').textContent = '00:00';
+        
+        currentDifficulty = difficulty;
+        
+        document.querySelectorAll('.difficulty-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.difficulty === difficulty);
+        });
+        
+        clearGame();
+        
+        const puzzleData = generatePuzzle(difficulty);
+        sudokuSolution = puzzleData.sudokuSolution;
+        sudokuGrid = puzzleData.sudokuBoard.map(row => [...row]);
+        
+        loadGameWithData(puzzleData);
+    }
+
+    function clearGame() {
+        editableCells.clear();
+        Object.keys(displayedNumbers).forEach(key => delete displayedNumbers[key]);
+        
+        numbersGroup.children.slice().forEach(child => {
+            numbersGroup.remove(child);
+            child.traverse((node) => {
+                if (node.isMesh) {
+                    node.geometry.dispose();
+                    node.material.dispose();
+                }
+            });
+        });
+        
+        notesGroup.children.slice().forEach(child => {
+            notesGroup.remove(child);
+            child.traverse((node) => {
+                if (node.isMesh) {
+                    node.geometry.dispose();
+                    node.material.dispose();
+                }
+            });
+        });
+        
+        cellsGroup.children.forEach(cell => {
+            cell.traverse(child => {
+                if (child.isMesh) {
+                    child.material.color.setHex(COLORS.DEFAULT_CELL);
+                }
+            });
+        });
+        
+        selectedCell = null;
     }
 
     function getCellCoordinates(cellName) {
@@ -267,14 +580,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     // Load game data
     Promise.all([
-        fetch('partsList.json').then(response => response.json()),
-        fetch('sudokuGame.json').then(response => response.json())
-    ]).then(([partsListData, sudokuGameData]) => {
-        const { borders, cells, numbers } = partsListData;
-        const { sudokuBoard, sudokuSolution: solution } = sudokuGameData;
-
-        sudokuSolution = solution;
-        sudokuGrid = sudokuBoard.map(row => [...row]);
+        fetch('partsList.json').then(response => response.json())
+    ]).then(([partsListData]) => {
+        const { borders, cells } = partsListData;
 
         // Load borders
         borders.forEach(border => {
@@ -299,8 +607,37 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        setupSudokuMechanics(cells, sudokuBoard);
+        // Load decorative golf ball
+        loader.load('assets/Foam Golf Ball - Foam Golf Ball.gltf', (gltf) => {
+            const golfBall = gltf.scene;
+            golfBall.name = 'decorative_golf_ball';
+            
+            golfBall.position.set(2, 1.5, 0.5);
+            
+            golfBall.traverse((child) => {
+                if (child.isMesh) {
+                    child.material = new THREE.MeshLambertMaterial({ color: 0xFFFFFF });
+                }
+            });
+            
+            decorativeGroup.add(golfBall);
+        }, undefined, (error) => {
+            console.warn('Golf ball model failed to load:', error);
+        });
+
+        setTimeout(() => {
+            startNewGame('Beginner');
+        }, 1000);
     }).catch(error => console.error('Error loading game data:', error));
+
+    function loadGameWithData(gameData) {
+        const { sudokuBoard } = gameData;
+        
+        fetch('partsList.json').then(response => response.json()).then(partsListData => {
+            const { cells } = partsListData;
+            setupSudokuMechanics(cells, sudokuBoard);
+        });
+    }
 
     function setupSudokuMechanics(cells, sudokuBoard) {
         sudokuBoard.forEach((row, rowIndex) => {
@@ -377,6 +714,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function inputNumber(number) {
         if (!selectedCell || !editableCells.has(selectedCell.cellName)) return;
         
+        startTimer();
+        
         const cellData = displayedNumbers[selectedCell.cellName];
         if (!cellData || cellData.isGiven) return;
 
@@ -384,6 +723,30 @@ document.addEventListener('DOMContentLoaded', () => {
         const cellCoords = `${cellName.split('_')[3]}_${cellName.split('_')[4]}`;
         
         if (currentInputMode === "numbers") {
+            const validationCoords = getCellCoordinates(cellName);
+            if (!isValidSudokuMove(sudokuGrid, validationCoords.row, validationCoords.col, number)) {
+                const invalidFeedback = document.createElement('div');
+                invalidFeedback.className = 'invalid-move-toast';
+                invalidFeedback.textContent = 'Invalid move! Number already exists in row, column, or box.';
+                invalidFeedback.style.cssText = `
+                    position: fixed; top: 20px; right: 20px;
+                    background: linear-gradient(135deg, #ff6b6b, #ee5a52);
+                    color: white; padding: 12px 20px; border-radius: 8px;
+                    box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
+                    font-weight: 500; z-index: 1000;
+                    transform: translateX(100%); transition: transform 0.3s ease;
+                `;
+                document.body.appendChild(invalidFeedback);
+                
+                setTimeout(() => invalidFeedback.style.transform = 'translateX(0)', 100);
+                setTimeout(() => {
+                    invalidFeedback.style.transform = 'translateX(100%)';
+                    setTimeout(() => document.body.removeChild(invalidFeedback), 300);
+                }, 2000);
+                
+                return; // Don't place the number
+            }
+            
             // Remove old number first
             removeOldNumber(cellName);
             
@@ -434,31 +797,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Check if puzzle is solved
             if (checkSolution()) {
-                const message = document.createElement('div');
-                message.style.position = 'absolute';
-                message.style.top = '50%';
-                message.style.left = '50%';
-                message.style.transform = 'translate(-50%, -50%)';
-                message.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
-                message.style.padding = '20px';
-                message.style.borderRadius = '10px';
-                message.style.boxShadow = '0 0 10px rgba(0, 0, 0, 0.5)';
-                message.style.fontSize = '24px';
-                message.style.color = '#000';
-                message.style.textAlign = 'center';
-                message.innerHTML = 'Congratulations!<br>You solved the puzzle!';
-
-                const closeButton = document.createElement('button');
-                closeButton.innerHTML = 'Close';
-                closeButton.style.marginTop = '10px';
-                closeButton.style.padding = '5px 15px';
-                closeButton.style.fontSize = '16px';
-                closeButton.addEventListener('click', () => {
-                    document.body.removeChild(message);
-                });
-                message.appendChild(closeButton);
-
-                document.body.appendChild(message);
+                const completionTime = gameTimer;
+                updateGameStats(currentDifficulty, completionTime);
+                showCelebration(completionTime);
+                
+                setTimeout(() => {
+                    startNewGame(currentDifficulty);
+                }, 3000);
             }
         } else {
             // First remove any regular number if it exists
@@ -561,12 +906,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    document.querySelectorAll('.difficulty-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const difficulty = btn.dataset.difficulty;
+            startNewGame(difficulty);
+        });
+    });
+
+    fab.addEventListener('click', () => {
+        startNewGame(currentDifficulty);
+    });
+
     window.addEventListener('resize', () => {
         const newScaleFactor = window.innerWidth < 768 ? 6.5 : 5;
         cellsGroup.scale.set(newScaleFactor, newScaleFactor, newScaleFactor);
         bordersGroup.scale.set(newScaleFactor, newScaleFactor, newScaleFactor);
         numbersGroup.scale.set(newScaleFactor, newScaleFactor, newScaleFactor);
         notesGroup.scale.set(newScaleFactor, newScaleFactor, newScaleFactor);
+        decorativeGroup.scale.set(newScaleFactor * 0.3, newScaleFactor * 0.3, newScaleFactor * 0.3);
         
         camera.aspect = (window.innerWidth * 0.7) / window.innerHeight;
         camera.updateProjectionMatrix();

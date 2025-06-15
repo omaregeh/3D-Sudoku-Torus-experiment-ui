@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D Sudoku Torus</title>
+    <style>
+        /* Prevent unwanted touch behaviors */
+        html, body {
+            overscroll-behavior: none;
+            touch-action: none;
+            position: fixed;
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="control-panel"></div>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/controls/TrackballControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sudoku@0.0.3/dist-web/index.js"></script>
+    <script>
+        if (typeof window !== 'undefined' && typeof sudoku !== 'undefined') {
+            window.sudoku = sudoku;
+        }
+    </script>
+    <script src="script.js"></script>
+</body>
+</html>
