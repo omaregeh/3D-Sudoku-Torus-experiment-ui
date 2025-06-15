@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const bordersGroup = new THREE.Group();
     const numbersGroup = new THREE.Group();
     const notesGroup = new THREE.Group();
+    const decorativeGroup = new THREE.Group();
 
     // Get the scaling factor based on screen size
     const scaleFactor = window.innerWidth < 768 ? 6.5 : 5;  // Larger scale for mobile
@@ -34,12 +35,14 @@ document.addEventListener('DOMContentLoaded', () => {
     bordersGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
     numbersGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
     notesGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
+    decorativeGroup.scale.set(scaleFactor * 0.3, scaleFactor * 0.3, scaleFactor * 0.3); // Smaller scale for golf ball
     
     // Add groups to scene
     scene.add(cellsGroup);
     scene.add(bordersGroup);
     scene.add(numbersGroup);
     scene.add(notesGroup);
+    scene.add(decorativeGroup);
 
     // Constants for colors
     const COLORS = {
@@ -185,44 +188,68 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
     }
 
+    function isValidSudokuMove(grid, row, col, num) {
+        for (let x = 0; x < 9; x++) {
+            if (x !== col && grid[row][x] === num) return false;
+        }
+        
+        for (let x = 0; x < 9; x++) {
+            if (x !== row && grid[x][col] === num) return false;
+        }
+        
+        const startRow = Math.floor(row / 3) * 3;
+        const startCol = Math.floor(col / 3) * 3;
+        for (let i = 0; i < 3; i++) {
+            for (let j = 0; j < 3; j++) {
+                const checkRow = startRow + i;
+                const checkCol = startCol + j;
+                if ((checkRow !== row || checkCol !== col) && grid[checkRow][checkCol] === num) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+    
     function generatePuzzle(difficulty = 'Beginner') {
-        const difficultyRanges = {
-            'Beginner': [0, 1],
-            'Intermediate': [1, 2.5], 
-            'Expert': [2.5, 4],
-            'Master': [4, 10]
+        const difficultySettings = {
+            'Beginner': { minClues: 45, maxClues: 50 },
+            'Intermediate': { minClues: 35, maxClues: 44 }, 
+            'Expert': { minClues: 25, maxClues: 34 },
+            'Master': { minClues: 17, maxClues: 24 }
         };
         
-        const [minRating, maxRating] = difficultyRanges[difficulty];
-        let puzzle, rating, attempts = 0;
+        const { minClues, maxClues } = difficultySettings[difficulty];
         
-        do {
-            if (typeof window !== 'undefined' && window.sudoku) {
-                puzzle = window.sudoku.makepuzzle();
-                rating = window.sudoku.ratepuzzle(puzzle, 4);
-            } else {
-                puzzle = Array(81).fill(null);
-                for (let i = 0; i < 81; i++) {
-                    if (Math.random() < 0.3) {
-                        puzzle[i] = Math.floor(Math.random() * 9) + 1;
-                    }
-                }
-                rating = minRating + Math.random() * (maxRating - minRating);
+        const solution = generateValidCompleteSolution();
+        
+        // Create puzzle by removing numbers
+        const puzzle = solution.map(row => [...row]);
+        const targetClues = minClues + Math.floor(Math.random() * (maxClues - minClues + 1));
+        const cellsToRemove = 81 - targetClues;
+        
+        const positions = [];
+        for (let row = 0; row < 9; row++) {
+            for (let col = 0; col < 9; col++) {
+                positions.push([row, col]);
             }
-            attempts++;
-        } while ((rating < minRating || rating >= maxRating) && attempts < 50);
+        }
         
-        let solution;
-        if (typeof window !== 'undefined' && window.sudoku) {
-            solution = window.sudoku.solvepuzzle(puzzle);
-        } else {
-            solution = generateValidSolution();
+        for (let i = positions.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [positions[i], positions[j]] = [positions[j], positions[i]];
+        }
+        
+        // Remove cells
+        for (let i = 0; i < cellsToRemove && i < positions.length; i++) {
+            const [row, col] = positions[i];
+            puzzle[row][col] = 0;
         }
         
         return { 
-            sudokuBoard: convertToGrid(puzzle), 
-            sudokuSolution: convertToGrid(solution),
-            rating: rating
+            sudokuBoard: puzzle, 
+            sudokuSolution: solution,
+            rating: (maxClues - targetClues) / (maxClues - minClues) * 4
         };
     }
     
@@ -234,19 +261,30 @@ document.addEventListener('DOMContentLoaded', () => {
         return grid;
     }
 
-    function generateValidSolution() {
-        const solution = [
-            [4, 8, 3, 9, 2, 1, 6, 5, 7],
-            [9, 6, 7, 3, 4, 5, 8, 2, 1],
-            [2, 5, 1, 8, 7, 6, 4, 9, 3],
-            [5, 4, 8, 1, 3, 2, 9, 7, 6],
-            [7, 2, 9, 5, 6, 4, 1, 3, 8],
-            [1, 3, 6, 7, 9, 8, 2, 4, 5],
-            [3, 7, 2, 6, 8, 9, 5, 1, 4],
-            [8, 1, 4, 2, 5, 3, 7, 6, 9],
-            [6, 9, 5, 4, 1, 7, 3, 8, 2]
+    function generateValidCompleteSolution() {
+        const baseSolution = [
+            [5, 3, 4, 6, 7, 8, 9, 1, 2],
+            [6, 7, 2, 1, 9, 5, 3, 4, 8],
+            [1, 9, 8, 3, 4, 2, 5, 6, 7],
+            [8, 5, 9, 7, 6, 1, 4, 2, 3],
+            [4, 2, 6, 8, 5, 3, 7, 9, 1],
+            [7, 1, 3, 9, 2, 4, 8, 5, 6],
+            [9, 6, 1, 5, 3, 7, 2, 8, 4],
+            [2, 8, 7, 4, 1, 9, 6, 3, 5],
+            [3, 4, 5, 2, 8, 6, 1, 7, 9]
         ];
-        return solution.flat();
+        
+        const solution = baseSolution.map(row => [...row]);
+        
+        for (let block = 0; block < 3; block++) {
+            if (Math.random() < 0.5) {
+                const row1 = block * 3 + Math.floor(Math.random() * 3);
+                const row2 = block * 3 + Math.floor(Math.random() * 3);
+                [solution[row1], solution[row2]] = [solution[row2], solution[row1]];
+            }
+        }
+        
+        return solution;
     }
 
     function startTimer() {
@@ -569,6 +607,24 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
+        // Load decorative golf ball
+        loader.load('assets/Foam Golf Ball - Foam Golf Ball.gltf', (gltf) => {
+            const golfBall = gltf.scene;
+            golfBall.name = 'decorative_golf_ball';
+            
+            golfBall.position.set(2, 1.5, 0.5);
+            
+            golfBall.traverse((child) => {
+                if (child.isMesh) {
+                    child.material = new THREE.MeshLambertMaterial({ color: 0xFFFFFF });
+                }
+            });
+            
+            decorativeGroup.add(golfBall);
+        }, undefined, (error) => {
+            console.warn('Golf ball model failed to load:', error);
+        });
+
         setTimeout(() => {
             startNewGame('Beginner');
         }, 1000);
@@ -667,6 +723,30 @@ document.addEventListener('DOMContentLoaded', () => {
         const cellCoords = `${cellName.split('_')[3]}_${cellName.split('_')[4]}`;
         
         if (currentInputMode === "numbers") {
+            const validationCoords = getCellCoordinates(cellName);
+            if (!isValidSudokuMove(sudokuGrid, validationCoords.row, validationCoords.col, number)) {
+                const invalidFeedback = document.createElement('div');
+                invalidFeedback.className = 'invalid-move-toast';
+                invalidFeedback.textContent = 'Invalid move! Number already exists in row, column, or box.';
+                invalidFeedback.style.cssText = `
+                    position: fixed; top: 20px; right: 20px;
+                    background: linear-gradient(135deg, #ff6b6b, #ee5a52);
+                    color: white; padding: 12px 20px; border-radius: 8px;
+                    box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
+                    font-weight: 500; z-index: 1000;
+                    transform: translateX(100%); transition: transform 0.3s ease;
+                `;
+                document.body.appendChild(invalidFeedback);
+                
+                setTimeout(() => invalidFeedback.style.transform = 'translateX(0)', 100);
+                setTimeout(() => {
+                    invalidFeedback.style.transform = 'translateX(100%)';
+                    setTimeout(() => document.body.removeChild(invalidFeedback), 300);
+                }, 2000);
+                
+                return; // Don't place the number
+            }
+            
             // Remove old number first
             removeOldNumber(cellName);
             
@@ -843,6 +923,7 @@ document.addEventListener('DOMContentLoaded', () => {
         bordersGroup.scale.set(newScaleFactor, newScaleFactor, newScaleFactor);
         numbersGroup.scale.set(newScaleFactor, newScaleFactor, newScaleFactor);
         notesGroup.scale.set(newScaleFactor, newScaleFactor, newScaleFactor);
+        decorativeGroup.scale.set(newScaleFactor * 0.3, newScaleFactor * 0.3, newScaleFactor * 0.3);
         
         camera.aspect = (window.innerWidth * 0.7) / window.innerHeight;
         camera.updateProjectionMatrix();
