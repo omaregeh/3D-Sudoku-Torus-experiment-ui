@@ -585,6 +585,50 @@ document.addEventListener('DOMContentLoaded', () => {
             user-select: none;
         `;
         
+        const canvas = document.querySelector('canvas');
+        
+        // Create trackball rotation function using synthetic mouse events
+        window.rotateTorusCamera = function(deltaX, deltaY) {
+            if (canvas) {
+                const rect = canvas.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                
+                // Create synthetic mouse events on canvas to trigger existing TrackballControls
+                const mouseDown = new MouseEvent('mousedown', {
+                    clientX: centerX,
+                    clientY: centerY,
+                    button: 0,
+                    bubbles: true
+                });
+                
+                const mouseMove = new MouseEvent('mousemove', {
+                    clientX: centerX + deltaX,
+                    clientY: centerY + deltaY,
+                    button: 0,
+                    bubbles: true
+                });
+                
+                const mouseUp = new MouseEvent('mouseup', {
+                    clientX: centerX + deltaX,
+                    clientY: centerY + deltaY,
+                    button: 0,
+                    bubbles: true
+                });
+                
+                canvas.dispatchEvent(mouseDown);
+                setTimeout(() => {
+                    canvas.dispatchEvent(mouseMove);
+                    setTimeout(() => {
+                        canvas.dispatchEvent(mouseUp);
+                    }, 10);
+                }, 10);
+                
+                return true;
+            }
+            return false;
+        };
+        
         // Trackball functionality variables
         let isDragging = false;
         let lastMouseX = 0;
@@ -604,16 +648,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const deltaX = e.clientX - lastMouseX;
             const deltaY = e.clientY - lastMouseY;
             
-            const rotateSpeed = controls.rotateSpeed * 0.01;
-            
-            camera.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), -deltaX * rotateSpeed);
-            
-            const axis = new THREE.Vector3(1, 0, 0);
-            axis.applyQuaternion(camera.quaternion);
-            camera.position.applyAxisAngle(axis, deltaY * rotateSpeed);
-            
-            camera.lookAt(0, 0, 0);
-            controls.update();
+            if (window.rotateTorusCamera) {
+                window.rotateTorusCamera(deltaX * 2, deltaY * 2); // Scale for better sensitivity
+            }
             
             lastMouseX = e.clientX;
             lastMouseY = e.clientY;
@@ -641,16 +678,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const deltaX = touch.clientX - lastMouseX;
             const deltaY = touch.clientY - lastMouseY;
             
-            const rotateSpeed = controls.rotateSpeed * 0.01;
-            
-            camera.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), -deltaX * rotateSpeed);
-            
-            const axis = new THREE.Vector3(1, 0, 0);
-            axis.applyQuaternion(camera.quaternion);
-            camera.position.applyAxisAngle(axis, deltaY * rotateSpeed);
-            
-            camera.lookAt(0, 0, 0);
-            controls.update();
+            if (window.rotateTorusCamera) {
+                window.rotateTorusCamera(deltaX * 2, deltaY * 2);
+            }
             
             lastMouseX = touch.clientX;
             lastMouseY = touch.clientY;
@@ -727,7 +757,9 @@ document.addEventListener('DOMContentLoaded', () => {
             startNewGame('Beginner');
             // Create decorative golf ball after UI is fully initialized
             setTimeout(() => {
-                createUIGolfBall();
+                if (typeof window.createUIGolfBall === 'function') {
+                    window.createUIGolfBall();
+                }
             }, 500);
         }, 1000);
     }).catch(error => console.error('Error loading game data:', error));
@@ -1042,6 +1074,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     animate();
     
+    // Create the golf ball after everything is initialized
     if (typeof window.createUIGolfBall === 'function') {
         window.createUIGolfBall();
     }
