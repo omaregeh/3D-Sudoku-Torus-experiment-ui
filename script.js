@@ -560,15 +560,14 @@ document.addEventListener('DOMContentLoaded', () => {
         golfBall.id = 'ui-golf-ball';
         golfBall.style.cssText = `
             position: fixed;
-            top: 20px;
-            right: 20px;
-            width: 50px;
-            height: 50px;
+            bottom: 80px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
             background: radial-gradient(circle at 30% 30%, #4a90e2, #2563eb, #1e40af);
             border-radius: 50%;
             z-index: 9999;
-            cursor: pointer;
-            transition: all 0.3s ease;
+            cursor: grab;
             border: 4px solid rgba(255, 255, 255, 0.8);
             box-shadow: 
                 0 0 30px rgba(37, 99, 235, 1.0),
@@ -579,30 +578,88 @@ document.addEventListener('DOMContentLoaded', () => {
             visibility: visible;
             display: block;
             pointer-events: auto;
+            touch-action: none;
+            user-select: none;
         `;
         
-        golfBall.addEventListener('mouseenter', () => {
-            golfBall.style.transform = 'scale(1.2)';
-            golfBall.style.boxShadow = `
-                0 0 40px rgba(37, 99, 235, 1.0),
-                0 12px 24px rgba(37, 99, 235, 0.6),
-                inset -3px -3px 6px rgba(0, 0, 0, 0.3),
-                inset 3px 3px 6px rgba(255, 255, 255, 0.4)
-            `;
+        // Trackball functionality variables
+        let isDragging = false;
+        let lastMouseX = 0;
+        let lastMouseY = 0;
+        
+        golfBall.addEventListener('mousedown', function(e) {
+            isDragging = true;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+            this.style.cursor = 'grabbing';
+            e.preventDefault();
         });
         
-        golfBall.addEventListener('mouseleave', () => {
-            golfBall.style.transform = 'scale(1)';
-            golfBall.style.boxShadow = `
-                0 0 30px rgba(37, 99, 235, 1.0),
-                0 8px 16px rgba(37, 99, 235, 0.5),
-                inset -3px -3px 6px rgba(0, 0, 0, 0.3),
-                inset 3px 3px 6px rgba(255, 255, 255, 0.4)
-            `;
+        document.addEventListener('mousemove', function(e) {
+            if (!isDragging) return;
+            
+            const deltaX = e.clientX - lastMouseX;
+            const deltaY = e.clientY - lastMouseY;
+            
+            const rotateSpeed = controls.rotateSpeed * 0.01;
+            
+            camera.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), -deltaX * rotateSpeed);
+            
+            const axis = new THREE.Vector3(1, 0, 0);
+            axis.applyQuaternion(camera.quaternion);
+            camera.position.applyAxisAngle(axis, deltaY * rotateSpeed);
+            
+            camera.lookAt(0, 0, 0);
+            controls.update();
+            
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+        });
+        
+        document.addEventListener('mouseup', function() {
+            if (isDragging) {
+                isDragging = false;
+                golfBall.style.cursor = 'grab';
+            }
+        });
+        
+        golfBall.addEventListener('touchstart', function(e) {
+            isDragging = true;
+            const touch = e.touches[0];
+            lastMouseX = touch.clientX;
+            lastMouseY = touch.clientY;
+            e.preventDefault();
+        });
+        
+        document.addEventListener('touchmove', function(e) {
+            if (!isDragging) return;
+            
+            const touch = e.touches[0];
+            const deltaX = touch.clientX - lastMouseX;
+            const deltaY = touch.clientY - lastMouseY;
+            
+            const rotateSpeed = controls.rotateSpeed * 0.01;
+            
+            camera.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), -deltaX * rotateSpeed);
+            
+            const axis = new THREE.Vector3(1, 0, 0);
+            axis.applyQuaternion(camera.quaternion);
+            camera.position.applyAxisAngle(axis, deltaY * rotateSpeed);
+            
+            camera.lookAt(0, 0, 0);
+            controls.update();
+            
+            lastMouseX = touch.clientX;
+            lastMouseY = touch.clientY;
+            e.preventDefault();
+        });
+        
+        document.addEventListener('touchend', function() {
+            isDragging = false;
         });
         
         document.body.appendChild(golfBall);
-        console.log('Blue golf ball successfully added to UI button section with fixed positioning');
+        console.log('Blue trackball golf ball successfully added to UI button section with touch controls');
     };
 
     function eraseCell(cellName) {
@@ -981,4 +1038,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     animate();
+    
+    if (typeof window.createUIGolfBall === 'function') {
+        window.createUIGolfBall();
+    }
 });
