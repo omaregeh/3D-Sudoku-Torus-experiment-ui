@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
         GIVEN_CELL: 0xD3D3D3
     };
 
-    // Camera controls
+    // Camera controls - make globally accessible for golf ball trackball functionality
     const controls = new THREE.TrackballControls(camera, renderer.domElement);
     controls.rotateSpeed = 5.0;
     controls.dynamicDampingFactor = 0.3;
@@ -62,6 +62,9 @@ document.addEventListener('DOMContentLoaded', () => {
     controls.noPan = true;
     controls.target.set(0, 0, 0);  // Adjusted to match camera lookAt
     controls.update();
+    
+    window.camera = camera;
+    window.controls = controls;
 
     // Game state variables
     let selectedCell = null;
