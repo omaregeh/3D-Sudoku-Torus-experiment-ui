@@ -549,6 +549,62 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    window.createUIGolfBall = function() {
+        // Remove any existing golf ball first
+        const existingGolfBall = document.getElementById('ui-golf-ball');
+        if (existingGolfBall) {
+            existingGolfBall.remove();
+        }
+        
+        const golfBall = document.createElement('div');
+        golfBall.id = 'ui-golf-ball';
+        golfBall.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            background: radial-gradient(circle at 30% 30%, #4a90e2, #2563eb, #1e40af);
+            border-radius: 50%;
+            z-index: 9999;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 4px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 
+                0 0 30px rgba(37, 99, 235, 1.0),
+                0 8px 16px rgba(37, 99, 235, 0.5),
+                inset -3px -3px 6px rgba(0, 0, 0, 0.3),
+                inset 3px 3px 6px rgba(255, 255, 255, 0.4);
+            opacity: 1;
+            visibility: visible;
+            display: block;
+            pointer-events: auto;
+        `;
+        
+        golfBall.addEventListener('mouseenter', () => {
+            golfBall.style.transform = 'scale(1.2)';
+            golfBall.style.boxShadow = `
+                0 0 40px rgba(37, 99, 235, 1.0),
+                0 12px 24px rgba(37, 99, 235, 0.6),
+                inset -3px -3px 6px rgba(0, 0, 0, 0.3),
+                inset 3px 3px 6px rgba(255, 255, 255, 0.4)
+            `;
+        });
+        
+        golfBall.addEventListener('mouseleave', () => {
+            golfBall.style.transform = 'scale(1)';
+            golfBall.style.boxShadow = `
+                0 0 30px rgba(37, 99, 235, 1.0),
+                0 8px 16px rgba(37, 99, 235, 0.5),
+                inset -3px -3px 6px rgba(0, 0, 0, 0.3),
+                inset 3px 3px 6px rgba(255, 255, 255, 0.4)
+            `;
+        });
+        
+        document.body.appendChild(golfBall);
+        console.log('Blue golf ball successfully added to UI button section with fixed positioning');
+    };
+
     function eraseCell(cellName) {
         const cellData = displayedNumbers[cellName];
         if (!cellData || cellData.isGiven) return;
@@ -607,26 +663,12 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // Load decorative golf ball
-        loader.load('assets/Foam Golf Ball - Foam Golf Ball.gltf', (gltf) => {
-            const golfBall = gltf.scene;
-            golfBall.name = 'decorative_golf_ball';
-            
-            golfBall.position.set(2, 1.5, 0.5);
-            
-            golfBall.traverse((child) => {
-                if (child.isMesh) {
-                    child.material = new THREE.MeshLambertMaterial({ color: 0xFFFFFF });
-                }
-            });
-            
-            decorativeGroup.add(golfBall);
-        }, undefined, (error) => {
-            console.warn('Golf ball model failed to load:', error);
-        });
-
         setTimeout(() => {
             startNewGame('Beginner');
+            // Create decorative golf ball after UI is fully initialized
+            setTimeout(() => {
+                createUIGolfBall();
+            }, 500);
         }, 1000);
     }).catch(error => console.error('Error loading game data:', error));
 
@@ -923,7 +965,7 @@ document.addEventListener('DOMContentLoaded', () => {
         bordersGroup.scale.set(newScaleFactor, newScaleFactor, newScaleFactor);
         numbersGroup.scale.set(newScaleFactor, newScaleFactor, newScaleFactor);
         notesGroup.scale.set(newScaleFactor, newScaleFactor, newScaleFactor);
-        decorativeGroup.scale.set(newScaleFactor * 0.3, newScaleFactor * 0.3, newScaleFactor * 0.3);
+
         
         camera.aspect = (window.innerWidth * 0.7) / window.innerHeight;
         camera.updateProjectionMatrix();
