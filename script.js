@@ -1079,3 +1079,159 @@ document.addEventListener('DOMContentLoaded', () => {
         window.createUIGolfBall();
     }
 });
+
+setTimeout(() => {
+    if (!document.getElementById('ui-golf-ball')) {
+        // Create golf ball manually with trackball functionality
+        const golfBall = document.createElement('div');
+        golfBall.id = 'ui-golf-ball';
+        golfBall.style.cssText = `
+            position: fixed;
+            bottom: 80px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            background: radial-gradient(circle at 30% 30%, #4a90e2, #2563eb, #1e40af);
+            border-radius: 50%;
+            z-index: 9999;
+            cursor: grab;
+            border: 4px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 
+                0 0 30px rgba(37, 99, 235, 1.0),
+                0 8px 16px rgba(37, 99, 235, 0.5),
+                inset -3px -3px 6px rgba(0, 0, 0, 0.3),
+                inset 3px 3px 6px rgba(255, 255, 255, 0.4);
+            opacity: 1;
+            visibility: visible;
+            display: block;
+            pointer-events: auto;
+            touch-action: none;
+            user-select: none;
+        `;
+        
+        const canvas = document.querySelector('canvas');
+        
+        let isDragging = false;
+        let lastMouseX = 0;
+        let lastMouseY = 0;
+        
+        golfBall.addEventListener('mousedown', function(e) {
+            isDragging = true;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+            this.style.cursor = 'grabbing';
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mousemove', function(e) {
+            if (!isDragging || !canvas) return;
+            
+            const deltaX = e.clientX - lastMouseX;
+            const deltaY = e.clientY - lastMouseY;
+            
+            const rect = canvas.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            // Create synthetic mouse events on canvas to trigger existing TrackballControls
+            const mouseDown = new MouseEvent('mousedown', {
+                clientX: centerX,
+                clientY: centerY,
+                button: 0,
+                bubbles: true
+            });
+            
+            const mouseMove = new MouseEvent('mousemove', {
+                clientX: centerX + deltaX * 2,
+                clientY: centerY + deltaY * 2,
+                button: 0,
+                bubbles: true
+            });
+            
+            const mouseUp = new MouseEvent('mouseup', {
+                clientX: centerX + deltaX * 2,
+                clientY: centerY + deltaY * 2,
+                button: 0,
+                bubbles: true
+            });
+            
+            canvas.dispatchEvent(mouseDown);
+            setTimeout(() => {
+                canvas.dispatchEvent(mouseMove);
+                setTimeout(() => {
+                    canvas.dispatchEvent(mouseUp);
+                }, 10);
+            }, 10);
+            
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+        });
+        
+        document.addEventListener('mouseup', function() {
+            if (isDragging) {
+                isDragging = false;
+                golfBall.style.cursor = 'grab';
+            }
+        });
+        
+        golfBall.addEventListener('touchstart', function(e) {
+            isDragging = true;
+            const touch = e.touches[0];
+            lastMouseX = touch.clientX;
+            lastMouseY = touch.clientY;
+            e.preventDefault();
+        });
+        
+        document.addEventListener('touchmove', function(e) {
+            if (!isDragging || !canvas) return;
+            
+            const touch = e.touches[0];
+            const deltaX = touch.clientX - lastMouseX;
+            const deltaY = touch.clientY - lastMouseY;
+            
+            const rect = canvas.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            const mouseDown = new MouseEvent('mousedown', {
+                clientX: centerX,
+                clientY: centerY,
+                button: 0,
+                bubbles: true
+            });
+            
+            const mouseMove = new MouseEvent('mousemove', {
+                clientX: centerX + deltaX * 2,
+                clientY: centerY + deltaY * 2,
+                button: 0,
+                bubbles: true
+            });
+            
+            const mouseUp = new MouseEvent('mouseup', {
+                clientX: centerX + deltaX * 2,
+                clientY: centerY + deltaY * 2,
+                button: 0,
+                bubbles: true
+            });
+            
+            canvas.dispatchEvent(mouseDown);
+            setTimeout(() => {
+                canvas.dispatchEvent(mouseMove);
+                setTimeout(() => {
+                    canvas.dispatchEvent(mouseUp);
+                }, 10);
+            }, 10);
+            
+            lastMouseX = touch.clientX;
+            lastMouseY = touch.clientY;
+            e.preventDefault();
+        });
+        
+        document.addEventListener('touchend', function() {
+            isDragging = false;
+        });
+        
+        document.body.appendChild(golfBall);
+        console.log('Fallback golf ball with trackball functionality created successfully');
+    }
+}, 1000);
