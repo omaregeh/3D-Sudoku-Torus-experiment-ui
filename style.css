@@ -13,36 +13,29 @@ body {
 .control-panel {
   position: fixed;
   right: 0;
-  top: 0;
+  top: 0;                 /* no header bar now */
   width: 30%;
-  height: 100vh;
+  height: 100vh;          /* full height */
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
   display: flex;
   flex-direction: column;
-  padding: 0;                 /* header handles top padding */
+  padding: 16px;
   box-sizing: border-box;
   overflow-y: auto;
   border-left: 1px solid rgba(0,0,0,0.06);
 }
 
-/* Purple header that sits at the top of the panel */
-.panel-header {
+/* top row (difficulty + timer) */
+.top-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 16px;
-  height: 56px;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  color: #fff;
-  position: sticky;   /* stays at top when panel scrolls */
-  top: 0;
-  z-index: 1;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  margin-bottom: 12px;
 }
 
-/* difficulty buttons on the purple bar */
+/* difficulty buttons */
 .difficulty-selector {
   display: flex;
   flex-wrap: wrap;
@@ -51,10 +44,10 @@ body {
 
 .difficulty-btn {
   padding: 6px 12px;
-  border: 1px solid rgba(255,255,255,0.5);
+  border: 2px solid #e5e7eb;
   border-radius: 18px;
-  background: rgba(255,255,255,0.18);
-  color: #ffffff;
+  background: #ffffff;
+  color: #111827;
   cursor: pointer;
   transition: all 0.2s ease;
   font-size: 13px;
@@ -62,29 +55,26 @@ body {
 }
 
 .difficulty-btn:hover {
-  background: rgba(255,255,255,0.26);
+  background: #f8f9ff;
+  border-color: #6366f1;
   transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(99,102,241,0.15);
 }
 
 .difficulty-btn.active {
-  background: rgba(255,255,255,0.35);
-  border-color: #ffffff;
+  background: #eef2ff;
+  border-color: #6366f1;
 }
 
-/* timer on purple bar */
+/* timer */
 .timer-display {
   font-size: 16px;
   font-weight: 800;
   font-family: 'Courier New', monospace;
-  color: #ffffff;
+  color: #0f172a;
 }
 
-/* ——— Contents below the header ——— */
-.panel-body {
-  padding: 16px;
-}
-
-/* Number pad */
+/* ——— Number pad ——— */
 .number-pad {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -116,7 +106,7 @@ body {
   box-shadow: 0 2px 4px rgba(0,0,0,0.06);
 }
 
-/* Utility buttons */
+/* ——— Utility buttons ——— */
 .utility-buttons {
   display: flex;
   flex-direction: column;
@@ -146,6 +136,44 @@ body {
 .utility-buttons button:active {
   transform: translateY(0);
   box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+}
+
+/* ——— Trackpad ——— */
+.trackpad-wrap {
+  position: relative;
+  margin-top: 16px;
+  height: 220px;
+  border-radius: 16px;
+}
+
+.trackpad-surface {
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  border: 2px solid #e5e7eb;
+  background: linear-gradient(180deg, #fafafa, #f3f4f6);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  cursor: grab;
+  touch-action: none;      /* allow drag without scrolling */
+  z-index: 2;              /* above the label so it captures events */
+}
+
+.trackpad-surface:active {
+  cursor: grabbing;
+  background: linear-gradient(180deg, #f1f5f9, #e5e7eb);
+}
+
+.trackpad-label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  color: #111827;
+  opacity: 0.6;
+  user-select: none;
+  pointer-events: none;    /* cannot be selected or clicked */
+  z-index: 1;              /* below the surface */
 }
 
 /* ——— Win/achievement UI ——— */
@@ -209,22 +237,9 @@ body {
 
 /* ——— Animations ——— */
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-@keyframes slideUp {
-  from { transform: translateY(50px); opacity: 0; }
-  to   { transform: translateY(0);    opacity: 1; }
-}
-
-@keyframes bounce {
-  0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
-  40% { transform: translateY(-10px); }
-  60% { transform: translateY(-5px); }
-}
-
-@keyframes confettiFall {
-  0%   { transform: translateY(-100vh) rotate(0deg);   opacity: 1; }
-  100% { transform: translateY(100vh)  rotate(720deg); opacity: 0; }
-}
+@keyframes slideUp { from { transform: translateY(50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes bounce { 0%,20%,50%,80%,100% { transform: translateY(0); } 40% { transform: translateY(-10px); } 60% { transform: translateY(-5px); } }
+@keyframes confettiFall { 0% { transform: translateY(-100vh) rotate(0deg); opacity: 1; } 100% { transform: translateY(100vh) rotate(720deg); opacity: 0; } }
 
 /* ——— Mobile ——— */
 @media (max-width: 768px) {
@@ -237,32 +252,18 @@ body {
     bottom: 0;
     top: auto;
     width: 100%;
-    height: 45%;
+    height: 50%;
     border-radius: 20px 20px 0 0;
-  }
-
-  .panel-header {
-    height: 50px;
-    padding: 10px 14px;
   }
 
   .difficulty-btn { padding: 5px 10px; font-size: 12px; }
   .timer-display { font-size: 15px; }
 
-  .panel-body { padding: 14px; }
-
-  .number-pad {
-    grid-template-columns: repeat(5, 1fr);
-    gap: 8px;
-  }
+  .number-pad { grid-template-columns: repeat(5, 1fr); gap: 8px; }
   .number-pad button { padding: 12px 8px; font-size: 16px; }
 
   .utility-buttons { flex-direction: row; }
   .utility-buttons button { flex: 1; padding: 10px; font-size: 14px; }
 
-  .celebration-content { margin: 20px; padding: 30px; }
-  .celebration-icon { font-size: 48px; }
-  .celebration-content h2 { font-size: 24px; }
-  .completion-time { font-size: 20px; }
-  .celebration-stats { flex-direction: column; gap: 10px; }
+  .trackpad-wrap { height: 180px; }
 }
