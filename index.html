@@ -1,28 +1,33 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>3D Sudoku Torus</title>
-    <style>
-        /* Prevent unwanted touch behaviors */
-        html, body {
-            overscroll-behavior: none;
-            touch-action: none;
-            position: fixed;
-            overflow: hidden;
-            width: 100%;
-            height: 100%;
-        }
-    </style>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>3D Sudoku Torus</title>
+  <style>
+    /* Prevent unwanted touch behaviors */
+    html, body {
+      overscroll-behavior: none;
+      touch-action: none;
+      position: fixed;
+      overflow: hidden;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+    }
+  </style>
+  <!-- bump v= number whenever you change CSS to avoid caching -->
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
-    <div class="control-panel"></div>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/loaders/GLTFLoader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/controls/TrackballControls.js"></script>
+  <!-- Three.js + helpers -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/controls/TrackballControls.js"></script>
 
-    <script src="script.js"></script>
+  <!-- Your game code (paste the full script.js I gave you) -->
+  <!-- bump v= number whenever you change JS to avoid caching -->
+  <script src="script.js?v=6"></script>
 </body>
 </html>
