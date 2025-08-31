@@ -1,4 +1,4 @@
-console.log('BUILD v12 — difficulty on purple panel header');
+console.log('BUILD v13 — trackpad drag enabled');
 
 document.addEventListener('DOMContentLoaded', () => {
   let sudokuSolution = [];
@@ -40,31 +40,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Pastel subgrid styles (cells only)
   const SUBGRID_STYLES = {
-    1: { cell: 0xFFD1E8, givenCell: 0xFFA7C8 },
-    2: { cell: 0xFFD8B3, givenCell: 0xFFB67F },
-    3: { cell: 0xFFF4B3, givenCell: 0xFFE066 },
-    4: { cell: 0xCFFFE5, givenCell: 0x9DE8C7 },
-    5: { cell: 0xB3E5FF, givenCell: 0x7FCFFF },
-    6: { cell: 0xE2D6FF, givenCell: 0xC8B5FF },
-    7: { cell: 0xD7F8B7, givenCell: 0xA8E57F },
-    8: { cell: 0xFFC8C2, givenCell: 0xFFA39A },
-    9: { cell: 0xC6F3F6, givenCell: 0x95E3E8 },
+    1: { cell: 0xFFD1E8, givenCell: 0xFFA7C8 }, // baby pink
+    2: { cell: 0xFFD8B3, givenCell: 0xFFB67F }, // peach
+    3: { cell: 0xFFF4B3, givenCell: 0xFFE066 }, // pastel yellow
+    4: { cell: 0xCFFFE5, givenCell: 0x9DE8C7 }, // mint
+    5: { cell: 0xB3E5FF, givenCell: 0x7FCFFF }, // baby blue
+    6: { cell: 0xE2D6FF, givenCell: 0xC8B5FF }, // lavender
+    7: { cell: 0xD7F8B7, givenCell: 0xA8E57F }, // pastel green
+    8: { cell: 0xFFC8C2, givenCell: 0xFFA39A }, // coral
+    9: { cell: 0xC6F3F6, givenCell: 0x95E3E8 }, // light teal
   };
   function getBaseCellColorFor(subgrid, isGiven) {
     const s = SUBGRID_STYLES[subgrid];
     return s ? (isGiven ? s.givenCell : s.cell) : (isGiven ? COLORS.GIVEN_CELL : COLORS.DEFAULT_CELL);
   }
 
-  // Colors
+  // Colors (peers = gray)
   const COLORS = {
     DEFAULT_CELL: 0xFFFFFF,
-    SELECTED_CELL: 0xFF8C00,
-    RELATED_CELL: 0x9CA3AF,   // gray highlight for peers
-    GIVEN_NUMBER: 0x8B0000,
-    PLAYER_NUMBER: 0x000000,
+    SELECTED_CELL: 0xFF8C00, // orange
+    RELATED_CELL: 0x9CA3AF,  // gray peers
+    GIVEN_NUMBER: 0x8B0000,  // red
+    PLAYER_NUMBER: 0x000000, // black
     GIVEN_CELL: 0xD3D3D3
   };
-  const getNumberColor = isGiven => (isGiven ? COLORS.GIVEN_NUMBER : COLORS.PLAYER_NUMBER);
+  const getNumberColor = (isGiven) => (isGiven ? COLORS.GIVEN_NUMBER : COLORS.PLAYER_NUMBER);
 
   // Controls
   const controls = new THREE.TrackballControls(camera, renderer.domElement);
@@ -94,15 +94,15 @@ document.addEventListener('DOMContentLoaded', () => {
     achievements: []
   };
 
-  /* ===== UI: panel header (purple) + body ===== */
+  /* ===== UI (difficulty + timer at top, then numbers, utilities, then trackpad) ===== */
   const controlPanel = document.createElement('div');
   controlPanel.className = 'control-panel';
   document.body.appendChild(controlPanel);
 
-  // Purple header inside panel
-  const panelHeader = document.createElement('div');
-  panelHeader.className = 'panel-header';
-  controlPanel.appendChild(panelHeader);
+  // top row: difficulty + timer
+  const topRow = document.createElement('div');
+  topRow.className = 'top-row';
+  controlPanel.appendChild(topRow);
 
   const difficultySelector = document.createElement('div');
   difficultySelector.className = 'difficulty-selector';
@@ -112,22 +112,17 @@ document.addEventListener('DOMContentLoaded', () => {
     <button class="difficulty-btn" data-difficulty="Expert">Expert</button>
     <button class="difficulty-btn" data-difficulty="Master">Master</button>
   `;
-  panelHeader.appendChild(difficultySelector);
+  topRow.appendChild(difficultySelector);
 
   const timerDisplay = document.createElement('div');
   timerDisplay.className = 'timer-display';
   timerDisplay.textContent = '00:00';
-  panelHeader.appendChild(timerDisplay);
+  topRow.appendChild(timerDisplay);
 
-  // Panel body (numbers + utilities)
-  const panelBody = document.createElement('div');
-  panelBody.className = 'panel-body';
-  controlPanel.appendChild(panelBody);
-
-  // Number pad
+  // number pad
   const numberPad = document.createElement('div');
   numberPad.className = 'number-pad';
-  panelBody.appendChild(numberPad);
+  controlPanel.appendChild(numberPad);
   for (let i = 1; i <= 9; i++) {
     const btn = document.createElement('button');
     btn.innerText = i;
@@ -136,10 +131,10 @@ document.addEventListener('DOMContentLoaded', () => {
     numberPad.appendChild(btn);
   }
 
-  // Utility buttons
+  // utilities (toggle/erase)
   const utilityButtons = document.createElement('div');
   utilityButtons.className = 'utility-buttons';
-  panelBody.appendChild(utilityButtons);
+  controlPanel.appendChild(utilityButtons);
 
   const modeToggle = document.createElement('button');
   modeToggle.innerText = "Toggle: Numbers";
@@ -157,9 +152,82 @@ document.addEventListener('DOMContentLoaded', () => {
   eraseButton.addEventListener('click', doErase);
   eraseButton.addEventListener('touchstart', (e)=>{e.preventDefault(); doErase();},{passive:false});
   utilityButtons.appendChild(eraseButton);
-  /* ===== end UI ===== */
 
-  // Helpers
+  // ——— Trackpad (under Erase) ———
+  const trackpadWrap = document.createElement('div');
+  trackpadWrap.className = 'trackpad-wrap';
+  controlPanel.appendChild(trackpadWrap);
+
+  const trackpadLabel = document.createElement('div');
+  trackpadLabel.className = 'trackpad-label';
+  trackpadLabel.textContent = 'Trackpad';
+  trackpadWrap.appendChild(trackpadLabel);
+
+  const trackpadSurface = document.createElement('div');
+  trackpadSurface.className = 'trackpad-surface';
+  trackpadWrap.appendChild(trackpadSurface);
+
+  // Trackpad drag → simulate canvas drags so TrackballControls rotates
+  let tpDragging = false;
+  let tpLastX = 0, tpLastY = 0;
+  let tpCumX = 0, tpCumY = 0;
+
+  function pointFromEvent(e) {
+    if (e.touches && e.touches[0]) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    return { x: e.clientX, y: e.clientY };
+    }
+
+  function sendToCanvas(type, dx, dy) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const ev = new MouseEvent(type, {
+      clientX: cx + dx,
+      clientY: cy + dy,
+      button: 0,
+      buttons: type === 'mouseup' ? 0 : 1,
+      bubbles: true
+    });
+    renderer.domElement.dispatchEvent(ev);
+  }
+
+  function tpStart(e) {
+    e.preventDefault();
+    const p = pointFromEvent(e);
+    tpDragging = true;
+    tpLastX = p.x; tpLastY = p.y;
+    tpCumX = 0; tpCumY = 0;
+    sendToCanvas('mousedown', 0, 0);
+  }
+
+  function tpMove(e) {
+    if (!tpDragging) return;
+    e.preventDefault();
+    const p = pointFromEvent(e);
+    const dx = (p.x - tpLastX) * 2; // sensitivity
+    const dy = (p.y - tpLastY) * 2;
+    tpCumX += dx;
+    tpCumY += dy;
+    tpLastX = p.x; tpLastY = p.y;
+    sendToCanvas('mousemove', tpCumX, tpCumY);
+  }
+
+  function tpEnd(e) {
+    if (!tpDragging) return;
+    e.preventDefault();
+    tpDragging = false;
+    sendToCanvas('mouseup', tpCumX, tpCumY);
+  }
+
+  trackpadSurface.addEventListener('mousedown', tpStart);
+  window.addEventListener('mousemove', tpMove);
+  window.addEventListener('mouseup', tpEnd);
+
+  trackpadSurface.addEventListener('touchstart', tpStart, { passive: false });
+  window.addEventListener('touchmove', tpMove, { passive: false });
+  window.addEventListener('touchend', tpEnd, { passive: false });
+
+  /* ===== Sudoku helpers ===== */
   function checkSolution() {
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) if (!sudokuGrid[r][c]) return false;
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) if (sudokuGrid[r][c] !== sudokuSolution[r][c]) return false;
@@ -180,7 +248,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function generatePuzzle(difficulty = 'Beginner') {
     const difficultySettings = {
       'Beginner': { minClues: 45, maxClues: 50 },
-      'Intermediate': { minClues: 35, maxClues: 44 }, 
+      'Intermediate': { minClues: 35, maxClues: 44 },
       'Expert': { minClues: 25, maxClues: 34 },
       'Master': { minClues: 17, maxClues: 24 }
     };
@@ -337,12 +405,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     notesGroup.children.slice().forEach(child => {
       notesGroup.remove(child);
-      child.traverse((node) => { if (child.isMesh) { child.geometry.dispose(); child.material.dispose(); } });
+      child.traverse((node) => { if (node.isMesh) { node.geometry.dispose(); node.material.dispose(); } });
     });
 
     cellsGroup.children.forEach(cell => {
       const name = cell.name || '';
-      const parts = name.split('_');
+      const parts = name.split('_'); // "Sub_5_Cell_2_3"
       const subgrid = parseInt(parts[1], 10);
       const baseColor = getBaseCellColorFor(subgrid, false);
       cell.traverse(child => { if (child.isMesh) child.material.color.setHex(baseColor); });
@@ -363,6 +431,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function getRelatedCells(cellName) {
     const coords = getCellCoordinates(cellName);
     const related = new Set();
+
     for (let col = 0; col < 9; col++) {
       const subGrid = Math.floor(coords.row / 3) * 3 + Math.floor(col / 3) + 1;
       related.add(`Sub_${subGrid}_Cell_${(coords.row % 3) + 1}_${(col % 3) + 1}`);
@@ -381,6 +450,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return Array.from(related);
   }
 
+  // highlight peers (including givens) with gray; restore to pastel after
   function highlightRelatedCells(cellName, highlight = true) {
     const relatedCells = getRelatedCells(cellName);
     relatedCells.forEach(relatedCell => {
@@ -432,6 +502,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       });
 
+      // set pastel base color for each subgrid cell
       cells.forEach(cell => {
         loader.load(`assets/Cells/${cell}.gltf`, (gltf) => {
           const part = gltf.scene; part.name = cell;
@@ -465,6 +536,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const cellCoords = `${(rowIndex % 3) + 1}_${(colIndex % 3) + 1}`;
 
         if (cell !== 0) {
+          // GIVEN: darker pastel + red number
           const numberFile = `Number_${cell}`;
           const numberPath = `assets/Numbers/${subGrid}/Cell_${cellCoords}/${numberFile}.gltf`;
           loader.load(numberPath, (gltf) => {
@@ -479,6 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
           colorCell(subGrid, cellName, getBaseCellColorFor(subGrid, true));
           displayedNumbers[cellName] = { number: cell, modelName: `${cellName}_${numberFile}`, isGiven: true };
         } else {
+          // EDITABLE: lighter pastel
           editableCells.add(cellName);
           colorCell(subGrid, cellName, getBaseCellColorFor(subGrid, false));
           displayedNumbers[cellName] = { number: null, modelName: null, isGiven: false };
@@ -539,6 +612,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      // clear old number + notes
       removeOldNumber(cellName);
       const notesToRemove = [];
       notesGroup.children.forEach(note => { if (note.name.startsWith(cellName)) notesToRemove.push(note); });
@@ -547,6 +621,7 @@ document.addEventListener('DOMContentLoaded', () => {
         note.traverse((child) => { if (child.isMesh) { child.geometry.dispose(); child.material.dispose(); } });
       });
 
+      // add player's number (black)
       const numberFile = `Number_${number}`;
       const numberPath = `assets/Numbers/${subGrid}/Cell_${cellCoords}/${numberFile}.gltf`;
       loader.load(numberPath, (gltf) => {
@@ -570,6 +645,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => startNewGame(currentDifficulty), 3000);
       }
     } else {
+      // notes mode (black)
       if (displayedNumbers[cellName].number !== null) {
         removeOldNumber(cellName);
         const coords = getCellCoordinates(cellName);
@@ -619,6 +695,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const prevIsGiven = !!displayedNumbers[selectedCell.cellName]?.isGiven;
           colorCell(prevSubgrid, selectedCell.cellName, getBaseCellColorFor(prevSubgrid, prevIsGiven));
         }
+
         const subGrid = cellName.split('_')[1];
         selectedCell = { subGrid, cellName };
         colorCell(parseInt(subGrid,10), cellName, COLORS.SELECTED_CELL);
@@ -638,7 +715,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (selectedCell && key >= '1' && key <= '9') inputNumber(parseInt(key));
   });
 
-  // Difficulty buttons (now on purple header)
+  // Difficulty buttons
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('.difficulty-btn');
     if (!btn) return;
