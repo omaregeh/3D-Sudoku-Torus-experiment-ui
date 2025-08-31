@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const COLORS = {
         DEFAULT_CELL: 0xFFFFFF,
         SELECTED_CELL: 0xFF8C00, // clicked cell (orange)
-        RELATED_CELL: 0xE5E7EB,  // light gray peers highlight
+        RELATED_CELL: 0x9CA3AF,  // darker gray peers highlight (try 0x6B7280 if you want even darker)
         GIVEN_NUMBER: 0x8B0000,  // red
         PLAYER_NUMBER: 0x000000, // black
         GIVEN_CELL: 0xD3D3D3
