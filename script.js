@@ -1,8 +1,7 @@
-// script.js
 document.addEventListener('DOMContentLoaded', () => {
     let sudokuSolution = [];
 
-    // Set up the scene, camera, and renderer
+    // Scene / camera / renderer
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(35, (window.innerWidth * 0.7) / window.innerHeight, 0.01, 100);
     camera.position.set(0, 3, 1.5);
@@ -12,15 +11,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth * 0.7, window.innerHeight);
     document.body.appendChild(renderer.domElement);
-    
-    // Lighting
+
+    // Lights
     const ambientLight = new THREE.AmbientLight(0xffffff, 1);
     scene.add(ambientLight);
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.1);
     directionalLight.position.set(15, 25, 15);
     scene.add(directionalLight);
 
-    // Groups
+    // Groups and loader
     const loader = new THREE.GLTFLoader();
     const cellsGroup = new THREE.Group();
     const bordersGroup = new THREE.Group();
@@ -28,25 +27,28 @@ document.addEventListener('DOMContentLoaded', () => {
     const notesGroup = new THREE.Group();
     const decorativeGroup = new THREE.Group();
 
-    // Scale
     const scaleFactor = window.innerWidth < 768 ? 6.5 : 5;
     cellsGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
     bordersGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
     numbersGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
     notesGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
     decorativeGroup.scale.set(scaleFactor * 0.3, scaleFactor * 0.3, scaleFactor * 0.3);
-    
+
     scene.add(cellsGroup, bordersGroup, numbersGroup, notesGroup, decorativeGroup);
 
-    // ===== NEW: per-subgrid color test =====
-    // Baby blue for the box, darker baby blue when the cell is a "given".
-    // Numbers in that box will be the same as the cell color.
-    // Change the key 5 -> 1..9 to test a different 3×3 box.
+    // ========= Pastel subgrid styles (cell background colors only) =========
+    // For each subgrid (1..9), define a pastel base color and a slightly darker shade used for GIVEN cells.
+    // Numbers DO NOT use these; given numbers stay red, player numbers stay black.
     const SUBGRID_STYLES = {
-        5: {
-            cell: 0xB3E5FF,     // baby blue
-            givenCell: 0x7FCFFF // darker baby blue
-        }
+        1: { cell: 0xFFD1E8, givenCell: 0xFFA7C8 }, // baby pink
+        2: { cell: 0xFFD8B3, givenCell: 0xFFB67F }, // peach
+        3: { cell: 0xFFF4B3, givenCell: 0xFFE066 }, // pastel yellow
+        4: { cell: 0xCFFFE5, givenCell: 0x9DE8C7 }, // mint
+        5: { cell: 0xB3E5FF, givenCell: 0x7FCFFF }, // baby blue
+        6: { cell: 0xE2D6FF, givenCell: 0xC8B5FF }, // lavender
+        7: { cell: 0xD7F8B7, givenCell: 0xA8E57F }, // pastel green
+        8: { cell: 0xFFC8C2, givenCell: 0xFFA39A }, // coral
+        9: { cell: 0xC6F3F6, givenCell: 0x95E3E8 }, // light teal
     };
 
     function getBaseCellColorFor(subgrid, isGiven) {
@@ -54,23 +56,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (style) return isGiven ? style.givenCell : style.cell;
         return isGiven ? COLORS.GIVEN_CELL : COLORS.DEFAULT_CELL;
     }
-    function getNumberColorFor(subgrid, isGiven) {
-        // Numbers match the cell color inside styled subgrids
-        const style = SUBGRID_STYLES[subgrid];
-        if (style) return isGiven ? style.givenCell : style.cell;
-        // Fallback to your existing palette elsewhere
+    // Numbers: keep original palette (given = red, player = black), regardless of subgrid.
+    function getNumberColor(isGiven) {
         return isGiven ? COLORS.GIVEN_NUMBER : COLORS.PLAYER_NUMBER;
     }
-    // ======================================
+    // ======================================================================
 
-    // Colors
+    // Core palette (unchanged)
     const COLORS = {
         DEFAULT_CELL: 0xFFFFFF,
         SELECTED_CELL: 0xFF8C00,
         RELATED_CELL: 0xFFFF00,
-        GIVEN_NUMBER: 0x8B0000,
-        PLAYER_NUMBER: 0x000000,
-        GIVEN_CELL: 0xD3D3D3
+        GIVEN_NUMBER: 0x8B0000,  // red for givens
+        PLAYER_NUMBER: 0x000000, // black for player inputs
+        GIVEN_CELL: 0xD3D3D3     // only used if a subgrid style is missing
     };
 
     // Controls
@@ -92,6 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let timerInterval = null;
     let gameStartTime = null;
     let gameInProgress = false;
+
     const editableCells = new Set();
     const displayedNumbers = {};
     let sudokuGrid = Array(9).fill().map(() => Array(9).fill(null));
@@ -102,7 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
         achievements: []
     };
 
-    // Header
+    // Header UI
     const gameHeader = document.createElement('div');
     gameHeader.className = 'game-header';
     gameHeader.innerHTML = `
@@ -132,7 +132,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const numberPad = document.createElement('div');
     numberPad.className = 'number-pad';
     controlPanel.appendChild(numberPad);
-
     for (let i = 1; i <= 9; i++) {
         const button = document.createElement('button');
         button.innerText = i;
@@ -163,36 +162,24 @@ document.addEventListener('DOMContentLoaded', () => {
     eraseButton.addEventListener('touchstart', (e)=>{e.preventDefault(); doErase();},{passive:false});
     utilityButtons.appendChild(eraseButton);
 
-    // Helpers (unchanged logic)
+    // ----- Sudoku helpers -----
     function checkSolution() {
-        for (let row = 0; row < 9; row++) {
-            for (let col = 0; col < 9; col++) {
-                if (!sudokuGrid[row][col]) return false;
-            }
-        }
-        for (let row = 0; row < 9; row++) {
-            for (let col = 0; col < 9; col++) {
-                if (sudokuGrid[row][col] !== sudokuSolution[row][col]) return false;
-            }
-        }
+        for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) if (!sudokuGrid[r][c]) return false;
+        for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) if (sudokuGrid[r][c] !== sudokuSolution[r][c]) return false;
         return true;
     }
 
     function isValidSudokuMove(grid, row, col, num) {
         for (let x = 0; x < 9; x++) if (x !== col && grid[row][x] === num) return false;
         for (let x = 0; x < 9; x++) if (x !== row && grid[x][col] === num) return false;
-        const startRow = Math.floor(row / 3) * 3;
-        const startCol = Math.floor(col / 3) * 3;
-        for (let i = 0; i < 3; i++) {
-            for (let j = 0; j < 3; j++) {
-                const checkRow = startRow + i;
-                const checkCol = startCol + j;
-                if ((checkRow !== row || checkCol !== col) && grid[checkRow][checkCol] === num) return false;
-            }
+        const sr = Math.floor(row / 3) * 3, sc = Math.floor(col / 3) * 3;
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+            const rr = sr + i, cc = sc + j;
+            if ((rr !== row || cc !== col) && grid[rr][cc] === num) return false;
         }
         return true;
     }
-    
+
     function generatePuzzle(difficulty = 'Beginner') {
         const difficultySettings = {
             'Beginner': { minClues: 45, maxClues: 50 },
@@ -203,32 +190,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const { minClues, maxClues } = difficultySettings[difficulty];
         const solution = generateValidCompleteSolution();
         const puzzle = solution.map(row => [...row]);
-
         const targetClues = minClues + Math.floor(Math.random() * (maxClues - minClues + 1));
         const cellsToRemove = 81 - targetClues;
-        
+
         const positions = [];
-        for (let row = 0; row < 9; row++) for (let col = 0; col < 9; col++) positions.push([row, col]);
-        for (let i = positions.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [positions[i], positions[j]] = [positions[j], positions[i]];
-        }
-        for (let i = 0; i < cellsToRemove && i < positions.length; i++) {
-            const [row, col] = positions[i];
-            puzzle[row][col] = 0;
-        }
-        return { 
-            sudokuBoard: puzzle, 
-            sudokuSolution: solution,
-            rating: (maxClues - targetClues) / (maxClues - minClues) * 4
-        };
+        for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) positions.push([r, c]);
+        for (let i = positions.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [positions[i], positions[j]] = [positions[j], positions[i]]; }
+        for (let i = 0; i < cellsToRemove && i < positions.length; i++) { const [r, c] = positions[i]; puzzle[r][c] = 0; }
+
+        return { sudokuBoard: puzzle, sudokuSolution: solution, rating: (maxClues - targetClues) / (maxClues - minClues) * 4 };
     }
-    
+
     function convertToGrid(flatArray) {
         const grid = [];
-        for (let i = 0; i < 9; i++) {
-            grid.push(flatArray.slice(i * 9, (i + 1) * 9).map(cell => cell === null ? 0 : cell));
-        }
+        for (let i = 0; i < 9; i++) grid.push(flatArray.slice(i * 9, (i + 1) * 9).map(v => v === null ? 0 : v));
         return grid;
     }
 
@@ -262,24 +237,14 @@ document.addEventListener('DOMContentLoaded', () => {
             timerInterval = setInterval(updateTimer, 1000);
         }
     }
-    function stopTimer() {
-        if (timerInterval) {
-            clearInterval(timerInterval);
-            timerInterval = null;
-        }
-        gameInProgress = false;
-    }
+    function stopTimer() { if (timerInterval) { clearInterval(timerInterval); timerInterval = null; } gameInProgress = false; }
     function updateTimer() {
         if (gameStartTime) {
             gameTimer = Math.floor((Date.now() - gameStartTime) / 1000);
             document.querySelector('.timer-display').textContent = formatTime(gameTimer);
         }
     }
-    function formatTime(seconds) {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
+    function formatTime(s) { const m = Math.floor(s / 60), sec = s % 60; return `${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`; }
 
     function updateGameStats(difficulty, completionTime) {
         gameStats.gamesPlayed++;
@@ -311,10 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
         el.textContent = message;
         document.body.appendChild(el);
         setTimeout(() => el.classList.add('show'), 100);
-        setTimeout(() => {
-            el.classList.remove('show');
-            setTimeout(() => { if (document.body.contains(el)) document.body.removeChild(el); }, 300);
-        }, 3000);
+        setTimeout(() => { el.classList.remove('show'); setTimeout(() => { if (document.body.contains(el)) document.body.removeChild(el); }, 300); }, 3000);
     }
 
     function showCelebration(completionTime) {
@@ -378,12 +340,12 @@ document.addEventListener('DOMContentLoaded', () => {
             child.traverse((node) => { if (node.isMesh) { node.geometry.dispose(); node.material.dispose(); } });
         });
 
-        // IMPORTANT: when clearing, reset each cell to its base (non-given) color for its subgrid.
+        // Reset each cell to its base (non-given) color for its subgrid.
         cellsGroup.children.forEach(cell => {
             const name = cell.name || '';
-            const parts = name.split('_'); // e.g., "Sub_5_Cell_2_3"
+            const parts = name.split('_'); // "Sub_5_Cell_2_3"
             const subgrid = parseInt(parts[1], 10);
-            const baseColor = getBaseCellColorFor(subgrid, /*isGiven=*/false);
+            const baseColor = getBaseCellColorFor(subgrid, false);
             cell.traverse(child => { if (child.isMesh) child.material.color.setHex(baseColor); });
         });
 
@@ -402,28 +364,20 @@ document.addEventListener('DOMContentLoaded', () => {
     function getRelatedCells(cellName) {
         const coords = getCellCoordinates(cellName);
         const related = new Set();
-
-        // Row
         for (let col = 0; col < 9; col++) {
             const subGrid = Math.floor(coords.row / 3) * 3 + Math.floor(col / 3) + 1;
-            const cellInRow = `Sub_${subGrid}_Cell_${(coords.row % 3) + 1}_${(col % 3) + 1}`;
-            related.add(cellInRow);
+            related.add(`Sub_${subGrid}_Cell_${(coords.row % 3) + 1}_${(col % 3) + 1}`);
         }
-        // Column
         for (let row = 0; row < 9; row++) {
             const subGrid = Math.floor(row / 3) * 3 + Math.floor(coords.col / 3) + 1;
-            const cellInCol = `Sub_${subGrid}_Cell_${(row % 3) + 1}_${(coords.col % 3) + 1}`;
-            related.add(cellInCol);
+            related.add(`Sub_${subGrid}_Cell_${(row % 3) + 1}_${(coords.col % 3) + 1}`);
         }
-        // Box
-        const squareStartRow = Math.floor(coords.row / 3) * 3;
-        const squareStartCol = Math.floor(coords.col / 3) * 3;
+        const sr = Math.floor(coords.row / 3) * 3;
+        const sc = Math.floor(coords.col / 3) * 3;
         for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
-            const row = squareStartRow + r;
-            const col = squareStartCol + c;
+            const row = sr + r, col = sc + c;
             const subGrid = Math.floor(row / 3) * 3 + Math.floor(col / 3) + 1;
-            const cellInSquare = `Sub_${subGrid}_Cell_${(row % 3) + 1}_${(col % 3) + 1}`;
-            related.add(cellInSquare);
+            related.add(`Sub_${subGrid}_Cell_${(row % 3) + 1}_${(col % 3) + 1}`);
         }
         return Array.from(related);
     }
@@ -478,11 +432,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const rect = canvas.getBoundingClientRect();
                 const centerX = rect.left + rect.width / 2;
                 const centerY = rect.top + rect.height / 2;
-                const mouseDown = new MouseEvent('mousedown', { clientX: centerX, clientY: centerY, button: 0, bubbles: true });
-                const mouseMove = new MouseEvent('mousemove', { clientX: centerX + deltaX, clientY: centerY + deltaY, button: 0, bubbles: true });
-                const mouseUp   = new MouseEvent('mouseup',   { clientX: centerX + deltaX, clientY: centerY + deltaY, button: 0, bubbles: true });
-                canvas.dispatchEvent(mouseDown);
-                setTimeout(() => { canvas.dispatchEvent(mouseMove); setTimeout(() => canvas.dispatchEvent(mouseUp), 10); }, 10);
+                const md = new MouseEvent('mousedown', { clientX: centerX, clientY: centerY, button: 0, bubbles: true });
+                const mm = new MouseEvent('mousemove', { clientX: centerX + deltaX, clientY: centerY + deltaY, button: 0, bubbles: true });
+                const mu = new MouseEvent('mouseup',   { clientX: centerX + deltaX, clientY: centerY + deltaY, button: 0, bubbles: true });
+                canvas.dispatchEvent(md);
+                setTimeout(() => { canvas.dispatchEvent(mm); setTimeout(() => canvas.dispatchEvent(mu), 10); }, 10);
                 return true;
             }
             return false;
@@ -493,8 +447,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         document.addEventListener('mousemove', function(e) {
             if (!isDragging) return;
-            const deltaX = e.clientX - lastMouseX, deltaY = e.clientY - lastMouseY;
-            if (window.rotateTorusCamera) window.rotateTorusCamera(deltaX * 2, deltaY * 2);
+            const dx = e.clientX - lastMouseX, dy = e.clientY - lastMouseY;
+            if (window.rotateTorusCamera) window.rotateTorusCamera(dx * 2, dy * 2);
             lastMouseX = e.clientX; lastMouseY = e.clientY;
         });
         document.addEventListener('mouseup', function() { if (isDragging) { isDragging = false; golfBall.style.cursor = 'grab'; }});
@@ -503,8 +457,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         document.addEventListener('touchmove', function(e) {
             if (!isDragging) return;
-            const t = e.touches[0]; const deltaX = t.clientX - lastMouseX; const deltaY = t.clientY - lastMouseY;
-            if (window.rotateTorusCamera) window.rotateTorusCamera(deltaX * 2, deltaY * 2);
+            const t = e.touches[0]; const dx = t.clientX - lastMouseX; const dy = t.clientY - lastMouseY;
+            if (window.rotateTorusCamera) window.rotateTorusCamera(dx * 2, dy * 2);
             lastMouseX = t.clientX; lastMouseY = t.clientY; e.preventDefault();
         });
         document.addEventListener('touchend', function() { isDragging = false; });
@@ -537,12 +491,12 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
+        // When loading cells, set material to the base NON-GIVEN color for each subgrid
         cells.forEach(cell => {
             loader.load(`assets/Cells/${cell}.gltf`, (gltf) => {
                 const part = gltf.scene; part.name = cell;
                 part.traverse((child) => {
                     if (child.isMesh) {
-                        // When first loading, set to the base color for this subgrid (non-given).
                         const subgrid = parseInt(cell.split('_')[1], 10);
                         const baseColor = getBaseCellColorFor(subgrid, false);
                         child.material = new THREE.MeshLambertMaterial({ color: baseColor });
@@ -572,9 +526,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const subGrid = Math.floor(rowIndex / 3) * 3 + Math.floor(colIndex / 3) + 1;
                 const cellName = `Sub_${subGrid}_Cell_${(rowIndex % 3) + 1}_${(colIndex % 3) + 1}`;
                 const cellCoords = `${(rowIndex % 3) + 1}_${(colIndex % 3) + 1}`;
-                
+
                 if (cell !== 0) {
-                    // GIVEN
+                    // GIVEN number: keep numbers red, cell darker shade for that subgrid
                     const numberFile = `Number_${cell}`;
                     const numberPath = `assets/Numbers/${subGrid}/Cell_${cellCoords}/${numberFile}.gltf`;
                     loader.load(numberPath, (gltf) => {
@@ -582,15 +536,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         part.name = `${cellName}_${numberFile}`;
                         part.traverse((child) => {
                             if (child.isMesh) {
-                                child.material = new THREE.MeshLambertMaterial({ color: getNumberColorFor(subGrid, true) });
+                                child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(true) }); // red
                             }
                         });
                         numbersGroup.add(part);
                     });
+
                     colorCell(subGrid, cellName, getBaseCellColorFor(subGrid, true));
                     displayedNumbers[cellName] = { number: cell, modelName: `${cellName}_${numberFile}`, isGiven: true };
                 } else {
-                    // EDITABLE
+                    // EDITABLE cell: base (lighter) shade for that subgrid
                     editableCells.add(cellName);
                     colorCell(subGrid, cellName, getBaseCellColorFor(subGrid, false));
                     displayedNumbers[cellName] = { number: null, modelName: null, isGiven: false };
@@ -601,9 +556,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function colorCell(subGrid, cellName, color) {
         const targetCell = cellsGroup.getObjectByName(cellName);
-        if (targetCell) {
-            targetCell.traverse(child => { if (child.isMesh) child.material.color.setHex(color); });
-        }
+        if (targetCell) targetCell.traverse(child => { if (child.isMesh) child.material.color.setHex(color); });
     }
 
     function removeOldNumber(cellName) {
@@ -629,10 +582,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const { subGrid, cellName } = selectedCell;
         const cellCoords = `${cellName.split('_')[3]}_${cellName.split('_')[4]}`;
-        
+
         if (currentInputMode === "numbers") {
-            const validationCoords = getCellCoordinates(cellName);
-            if (!isValidSudokuMove(sudokuGrid, validationCoords.row, validationCoords.col, number)) {
+            const v = getCellCoordinates(cellName);
+            if (!isValidSudokuMove(sudokuGrid, v.row, v.col, number)) {
                 const invalidFeedback = document.createElement('div');
                 invalidFeedback.className = 'invalid-move-toast';
                 invalidFeedback.textContent = 'Invalid move! Number already exists in row, column, or box.';
@@ -652,7 +605,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }, 2000);
                 return;
             }
-            // Remove old number and notes in this cell
+
+            // Clear old number & notes
             removeOldNumber(cellName);
             const notesToRemove = [];
             notesGroup.children.forEach(note => { if (note.name.startsWith(cellName)) notesToRemove.push(note); });
@@ -661,22 +615,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 note.traverse((child) => { if (child.isMesh) { child.geometry.dispose(); child.material.dispose(); } });
             });
 
+            // Add new number (player): keep black
             const numberFile = `Number_${number}`;
             const numberPath = `assets/Numbers/${subGrid}/Cell_${cellCoords}/${numberFile}.gltf`;
             loader.load(numberPath, (gltf) => {
                 const part = gltf.scene;
                 part.name = `${cellName}_${numberFile}`;
                 part.traverse((child) => {
-                    if (child.isMesh) child.material = new THREE.MeshLambertMaterial({ color: getNumberColorFor(parseInt(subGrid,10), false) });
+                    if (child.isMesh) child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(false) }); // black
                 });
                 numbersGroup.add(part);
             });
             displayedNumbers[cellName] = { ...displayedNumbers[cellName], number, modelName: `${cellName}_${numberFile}` };
 
-            // Update grid, notes, win check
+            // Update grid and notes
             const coords = getCellCoordinates(cellName);
             sudokuGrid[coords.row][coords.col] = number;
             updateAutomaticNotes(cellName, number);
+
             if (checkSolution()) {
                 const completionTime = gameTimer;
                 updateGameStats(currentDifficulty, completionTime);
@@ -684,7 +640,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 setTimeout(() => startNewGame(currentDifficulty), 3000);
             }
         } else {
-            // Notes mode
+            // Notes mode: still keep notes in player color (black)
             if (displayedNumbers[cellName].number !== null) {
                 removeOldNumber(cellName);
                 const coords = getCellCoordinates(cellName);
@@ -693,6 +649,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const noteFile = `New_Number_${number}`;
             const notePath = `assets/AdditionalNumbers/${subGrid}/Cell_${cellCoords}/${noteFile}.gltf`;
             const fullNoteName = `${cellName}_${noteFile}`;
+
             if (notesGroup.getObjectByName(fullNoteName)) {
                 const model = notesGroup.getObjectByName(fullNoteName);
                 notesGroup.remove(model);
@@ -702,7 +659,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const part = gltf.scene;
                     part.name = fullNoteName;
                     part.traverse((child) => {
-                        if (child.isMesh) child.material = new THREE.MeshLambertMaterial({ color: getNumberColorFor(parseInt(subGrid,10), false) });
+                        if (child.isMesh) child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(false) }); // black
                     });
                     notesGroup.add(part);
                 });
@@ -710,7 +667,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Pointer events
+    // Pointer picking
     function onPointerEvent(event) {
         event.preventDefault();
         const pointer = event.touches ? event.touches[0] : event;
@@ -727,16 +684,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const cellName = intersected.parent.name;
 
             if (editableCells.has(cellName)) {
-                // Reset previous
+                // Unselect previous
                 if (selectedCell) {
                     highlightRelatedCells(selectedCell.cellName, false);
                     const prevSubgrid = parseInt(selectedCell.subGrid, 10);
-                    const isGiven = !!displayedNumbers[selectedCell.cellName]?.isGiven;
-                    colorCell(prevSubgrid, selectedCell.cellName, getBaseCellColorFor(prevSubgrid, isGiven));
+                    const prevIsGiven = !!displayedNumbers[selectedCell.cellName]?.isGiven;
+                    colorCell(prevSubgrid, selectedCell.cellName, getBaseCellColorFor(prevSubgrid, prevIsGiven));
                 }
+                // Select new
                 const subGrid = cellName.split('_')[1];
                 selectedCell = { subGrid, cellName };
-                // New highlight
                 colorCell(parseInt(subGrid,10), cellName, COLORS.SELECTED_CELL);
                 highlightRelatedCells(cellName, true);
             }
@@ -759,6 +716,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     fab.addEventListener('click', () => startNewGame(currentDifficulty));
 
+    // Resize
     window.addEventListener('resize', () => {
         const newScaleFactor = window.innerWidth < 768 ? 6.5 : 5;
         cellsGroup.scale.set(newScaleFactor, newScaleFactor, newScaleFactor);
@@ -772,6 +730,7 @@ document.addEventListener('DOMContentLoaded', () => {
         controls.handleResize();
     });
 
+    // Loop
     function animate() {
         requestAnimationFrame(animate);
         controls.update();
@@ -782,7 +741,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof window.createUIGolfBall === 'function') window.createUIGolfBall();
 });
 
-// Fallback golf ball creation (unchanged)
+// Fallback golf ball
 setTimeout(() => {
     if (!document.getElementById('ui-golf-ball')) {
         const golfBall = document.createElement('div');
@@ -803,12 +762,12 @@ setTimeout(() => {
         });
         document.addEventListener('mousemove', function(e) {
             if (!isDragging || !canvas) return;
-            const deltaX = e.clientX - lastMouseX, deltaY = e.clientY - lastMouseY;
+            const dx = e.clientX - lastMouseX, dy = e.clientY - lastMouseY;
             const rect = canvas.getBoundingClientRect();
-            const centerX = rect.left + rect.width / 2, centerY = rect.top + rect.height / 2;
-            const md = new MouseEvent('mousedown', { clientX: centerX, clientY: centerY, button: 0, bubbles: true });
-            const mm = new MouseEvent('mousemove', { clientX: centerX + deltaX * 2, clientY: centerY + deltaY * 2, button: 0, bubbles: true });
-            const mu = new MouseEvent('mouseup',   { clientX: centerX + deltaX * 2, clientY: centerY + deltaY * 2, button: 0, bubbles: true });
+            const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+            const md = new MouseEvent('mousedown', { clientX: cx, clientY: cy, button: 0, bubbles: true });
+            const mm = new MouseEvent('mousemove', { clientX: cx + dx * 2, clientY: cy + dy * 2, button: 0, bubbles: true });
+            const mu = new MouseEvent('mouseup',   { clientX: cx + dx * 2, clientY: cy + dy * 2, button: 0, bubbles: true });
             canvas.dispatchEvent(md); setTimeout(() => { canvas.dispatchEvent(mm); setTimeout(() => canvas.dispatchEvent(mu), 10); }, 10);
             lastMouseX = e.clientX; lastMouseY = e.clientY;
         });
@@ -818,12 +777,12 @@ setTimeout(() => {
         });
         document.addEventListener('touchmove', function(e) {
             if (!isDragging || !canvas) return;
-            const t = e.touches[0]; const deltaX = t.clientX - lastMouseX; const deltaY = t.clientY - lastMouseY;
+            const t = e.touches[0]; const dx = t.clientX - lastMouseX; const dy = t.clientY - lastMouseY;
             const rect = canvas.getBoundingClientRect();
-            const centerX = rect.left + rect.width / 2, centerY = rect.top + rect.height / 2;
-            const md = new MouseEvent('mousedown', { clientX: centerX, clientY: centerY, button: 0, bubbles: true });
-            const mm = new MouseEvent('mousemove', { clientX: centerX + deltaX * 2, clientY: centerY + deltaY * 2, button: 0, bubbles: true });
-            const mu = new MouseEvent('mouseup',   { clientX: centerX + deltaX * 2, clientY: centerY + deltaY * 2, button: 0, bubbles: true });
+            const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+            const md = new MouseEvent('mousedown', { clientX: cx, clientY: cy, button: 0, bubbles: true });
+            const mm = new MouseEvent('mousemove', { clientX: cx + dx * 2, clientY: cy + dy * 2, button: 0, bubbles: true });
+            const mu = new MouseEvent('mouseup',   { clientX: cx + dx * 2, clientY: cy + dy * 2, button: 0, bubbles: true });
             canvas.dispatchEvent(md); setTimeout(() => { canvas.dispatchEvent(mm); setTimeout(() => canvas.dispatchEvent(mu), 10); }, 10);
             lastMouseX = t.clientX; lastMouseY = t.clientY; e.preventDefault();
         });
