@@ -1,3 +1,5 @@
+console.log('BUILD v10 — header removed, difficulty in panel, no FAB/ball');
+
 document.addEventListener('DOMContentLoaded', () => {
     let sudokuSolution = [];
 
@@ -37,7 +39,6 @@ document.addEventListener('DOMContentLoaded', () => {
     scene.add(cellsGroup, bordersGroup, numbersGroup, notesGroup, decorativeGroup);
 
     // ========= Pastel subgrid styles (cell background colors only) =========
-    // (Numbers do NOT use these; givens are red, player numbers black.)
     const SUBGRID_STYLES = {
         1: { cell: 0xFFD1E8, givenCell: 0xFFA7C8 }, // baby pink
         2: { cell: 0xFFD8B3, givenCell: 0xFFB67F }, // peach
@@ -49,26 +50,22 @@ document.addEventListener('DOMContentLoaded', () => {
         8: { cell: 0xFFC8C2, givenCell: 0xFFA39A }, // coral
         9: { cell: 0xC6F3F6, givenCell: 0x95E3E8 }, // light teal
     };
-
     function getBaseCellColorFor(subgrid, isGiven) {
         const s = SUBGRID_STYLES[subgrid];
         return s ? (isGiven ? s.givenCell : s.cell) : (isGiven ? COLORS.GIVEN_CELL : COLORS.DEFAULT_CELL);
     }
-    // Numbers: given = red, player = black
-    function getNumberColor(isGiven) {
-        return isGiven ? COLORS.GIVEN_NUMBER : COLORS.PLAYER_NUMBER;
-    }
     // ======================================================================
 
-    // Core palette
+    // Core palette (peers are a darker gray highlight)
     const COLORS = {
         DEFAULT_CELL: 0xFFFFFF,
         SELECTED_CELL: 0xFF8C00, // clicked cell (orange)
-        RELATED_CELL: 0x4B5563,  // darker gray peers highlight
+        RELATED_CELL: 0x9CA3AF,  // darker gray peers highlight (change if you want)
         GIVEN_NUMBER: 0x8B0000,  // red
         PLAYER_NUMBER: 0x000000, // black
         GIVEN_CELL: 0xD3D3D3
     };
+    const getNumberColor = (isGiven) => (isGiven ? COLORS.GIVEN_NUMBER : COLORS.PLAYER_NUMBER);
 
     // Controls
     const controls = new THREE.TrackballControls(camera, renderer.domElement);
@@ -78,8 +75,6 @@ document.addEventListener('DOMContentLoaded', () => {
     controls.noPan = true;
     controls.target.set(0, 0, 0);
     controls.update();
-    window.camera = camera;
-    window.controls = controls;
 
     // Game state
     let selectedCell = null;
@@ -100,45 +95,48 @@ document.addEventListener('DOMContentLoaded', () => {
         achievements: []
     };
 
-    // Header UI
-    const gameHeader = document.createElement('div');
-    gameHeader.className = 'game-header';
-    gameHeader.innerHTML = `
-        <div class="difficulty-selector">
-            <button class="difficulty-btn active" data-difficulty="Beginner">Beginner</button>
-            <button class="difficulty-btn" data-difficulty="Intermediate">Intermediate</button>
-            <button class="difficulty-btn" data-difficulty="Expert">Expert</button>
-            <button class="difficulty-btn" data-difficulty="Master">Master</button>
-        </div>
-        <div class="timer-display">00:00</div>
-    `;
-    document.body.appendChild(gameHeader);
-
-    // New game FAB
-    const fab = document.createElement('button');
-    fab.className = 'fab';
-    fab.innerHTML = '🎲';
-    fab.title = 'New Game';
-    document.body.appendChild(fab);
-
-    // Control panel
+    // ========= UI (no top banner, no FAB, no golf ball) =========
+    // Right-side control panel
     const controlPanel = document.createElement('div');
     controlPanel.className = 'control-panel';
     document.body.appendChild(controlPanel);
 
-    // Number pad
+    // Top row inside panel: Difficulty buttons + timer (moved here)
+    const topRow = document.createElement('div');
+    topRow.style.display = 'flex';
+    topRow.style.alignItems = 'center';
+    topRow.style.justifyContent = 'space-between';
+    topRow.style.marginBottom = '12px';
+    controlPanel.appendChild(topRow);
+
+    const difficultySelector = document.createElement('div');
+    difficultySelector.className = 'difficulty-selector';
+    difficultySelector.innerHTML = `
+        <button class="difficulty-btn active" data-difficulty="Beginner">Beginner</button>
+        <button class="difficulty-btn" data-difficulty="Intermediate">Intermediate</button>
+        <button class="difficulty-btn" data-difficulty="Expert">Expert</button>
+        <button class="difficulty-btn" data-difficulty="Master">Master</button>
+    `;
+    topRow.appendChild(difficultySelector);
+
+    const timerDisplay = document.createElement('div');
+    timerDisplay.className = 'timer-display';
+    timerDisplay.textContent = '00:00';
+    topRow.appendChild(timerDisplay);
+
+    // Number pad (goes **below** difficulty per your request)
     const numberPad = document.createElement('div');
     numberPad.className = 'number-pad';
     controlPanel.appendChild(numberPad);
     for (let i = 1; i <= 9; i++) {
-        const button = document.createElement('button');
-        button.innerText = i;
-        button.addEventListener('click', () => { if (selectedCell) inputNumber(i); });
-        button.addEventListener('touchstart', (e) => { e.preventDefault(); if (selectedCell) inputNumber(i); }, { passive: false });
-        numberPad.appendChild(button);
+        const btn = document.createElement('button');
+        btn.innerText = i;
+        btn.addEventListener('click', () => { if (selectedCell) inputNumber(i); });
+        btn.addEventListener('touchstart', (e) => { e.preventDefault(); if (selectedCell) inputNumber(i); }, { passive: false });
+        numberPad.appendChild(btn);
     }
 
-    // Utility buttons
+    // Utility buttons (toggle + erase) under the numbers
     const utilityButtons = document.createElement('div');
     utilityButtons.className = 'utility-buttons';
     controlPanel.appendChild(utilityButtons);
@@ -159,6 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
     eraseButton.addEventListener('click', doErase);
     eraseButton.addEventListener('touchstart', (e)=>{e.preventDefault(); doErase();},{passive:false});
     utilityButtons.appendChild(eraseButton);
+    // ============================================================
 
     // ----- Sudoku helpers -----
     function checkSolution() {
@@ -239,7 +238,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateTimer() {
         if (gameStartTime) {
             gameTimer = Math.floor((Date.now() - gameStartTime) / 1000);
-            document.querySelector('.timer-display').textContent = formatTime(gameTimer);
+            const el = document.querySelector('.timer-display');
+            if (el) el.textContent = formatTime(gameTimer);
         }
     }
     function formatTime(s) { const m = Math.floor(s / 60), sec = s % 60; return `${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`; }
@@ -313,7 +313,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function startNewGame(difficulty = currentDifficulty) {
         stopTimer();
         gameTimer = 0;
-        document.querySelector('.timer-display').textContent = '00:00';
+        const el = document.querySelector('.timer-display');
+        if (el) el.textContent = '00:00';
+
         currentDifficulty = difficulty;
         document.querySelectorAll('.difficulty-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.difficulty === difficulty);
@@ -338,7 +340,7 @@ document.addEventListener('DOMContentLoaded', () => {
             child.traverse((node) => { if (node.isMesh) { node.geometry.dispose(); node.material.dispose(); } });
         });
 
-        // Reset each cell to its base (non-given) color for its subgrid.
+        // Reset to base (non-given) color for each subgrid.
         cellsGroup.children.forEach(cell => {
             const name = cell.name || '';
             const parts = name.split('_'); // "Sub_5_Cell_2_3"
@@ -380,21 +382,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return Array.from(related);
     }
 
-    // Highlight ALL peers (row, column, box), INCLUDING givens, in light gray.
-    // When clearing, restore each cell to its proper base color (pastel lighter/darker).
+    // Highlight peers (including givens) in gray; restore to pastel afterwards.
     function highlightRelatedCells(cellName, highlight = true) {
         const relatedCells = getRelatedCells(cellName);
-
         relatedCells.forEach(relatedCell => {
             if (relatedCell === cellName) return; // clicked cell stays orange
-
             const subgrid = parseInt(relatedCell.split('_')[1], 10);
             const isGiven = !!displayedNumbers[relatedCell]?.isGiven;
-
-            const color = highlight
-                ? COLORS.RELATED_CELL                           // light gray when highlighted
-                : getBaseCellColorFor(subgrid, isGiven);        // back to pastel (darker if given)
-
+            const color = highlight ? COLORS.RELATED_CELL : getBaseCellColorFor(subgrid, isGiven);
             colorCell(subgrid, relatedCell, color);
         });
     }
@@ -413,62 +408,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-
-    // UI "golf ball" (unchanged)
-    window.createUIGolfBall = function() {
-        const existingGolfBall = document.getElementById('ui-golf-ball');
-        if (existingGolfBall) existingGolfBall.remove();
-        const golfBall = document.createElement('div');
-        golfBall.id = 'ui-golf-ball';
-        golfBall.style.cssText = `
-            position: fixed; bottom: 80px; right: 30px; width: 60px; height: 60px;
-            background: radial-gradient(circle at 30% 30%, #4a90e2, #2563eb, #1e40af);
-            border-radius: 50%; z-index: 9999; cursor: grab;
-            border: 4px solid rgba(255, 255, 255, 0.8);
-            box-shadow: 0 0 30px rgba(37,99,235,1.0), 0 8px 16px rgba(37,99,235,0.5),
-                        inset -3px -3px 6px rgba(0,0,0,0.3), inset 3px 3px 6px rgba(255,255,255,0.4);
-            opacity: 1; visibility: visible; display: block; pointer-events: auto;
-            touch-action: none; user-select: none;
-        `;
-        const canvas = document.querySelector('canvas');
-        window.rotateTorusCamera = function(deltaX, deltaY) {
-            if (canvas) {
-                const rect = canvas.getBoundingClientRect();
-                const centerX = rect.left + rect.width / 2;
-                const centerY = rect.top + rect.height / 2;
-                const md = new MouseEvent('mousedown', { clientX: centerX, clientY: centerY, button: 0, bubbles: true });
-                const mm = new MouseEvent('mousemove', { clientX: centerX + deltaX, clientY: centerY + deltaY, button: 0, bubbles: true });
-                const mu = new MouseEvent('mouseup',   { clientX: centerX + deltaX, clientY: centerY + deltaY, button: 0, bubbles: true });
-                canvas.dispatchEvent(md);
-                setTimeout(() => { canvas.dispatchEvent(mm); setTimeout(() => canvas.dispatchEvent(mu), 10); }, 10);
-                return true;
-            }
-            return false;
-        };
-        let isDragging = false, lastMouseX = 0, lastMouseY = 0;
-        golfBall.addEventListener('mousedown', function(e) {
-            isDragging = true; lastMouseX = e.clientX; lastMouseY = e.clientY; this.style.cursor = 'grabbing'; e.preventDefault();
-        });
-        document.addEventListener('mousemove', function(e) {
-            if (!isDragging) return;
-            const dx = e.clientX - lastMouseX, dy = e.clientY - lastMouseY;
-            if (window.rotateTorusCamera) window.rotateTorusCamera(dx * 2, dy * 2);
-            lastMouseX = e.clientX; lastMouseY = e.clientY;
-        });
-        document.addEventListener('mouseup', function() { if (isDragging) { isDragging = false; golfBall.style.cursor = 'grab'; }});
-        golfBall.addEventListener('touchstart', function(e) {
-            isDragging = true; const t = e.touches[0]; lastMouseX = t.clientX; lastMouseY = t.clientY; e.preventDefault();
-        });
-        document.addEventListener('touchmove', function(e) {
-            if (!isDragging) return;
-            const t = e.touches[0]; const dx = t.clientX - lastMouseX; const dy = t.clientY - lastMouseY;
-            if (window.rotateTorusCamera) window.rotateTorusCamera(dx * 2, dy * 2);
-            lastMouseX = t.clientX; lastMouseY = t.clientY; e.preventDefault();
-        });
-        document.addEventListener('touchend', function() { isDragging = false; });
-        document.body.appendChild(golfBall);
-        console.log('Blue trackball golf ball successfully added to UI button section with touch controls');
-    };
 
     function eraseCell(cellName) {
         const cellData = displayedNumbers[cellName];
@@ -495,7 +434,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // When loading cells, set material to the base NON-GIVEN color for each subgrid
+        // Cells: set base NON-GIVEN color for each subgrid
         cells.forEach(cell => {
             loader.load(`assets/Cells/${cell}.gltf`, (gltf) => {
                 const part = gltf.scene; part.name = cell;
@@ -510,10 +449,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        setTimeout(() => {
-            startNewGame('Beginner');
-            setTimeout(() => { if (typeof window.createUIGolfBall === 'function') window.createUIGolfBall(); }, 500);
-        }, 1000);
+        setTimeout(() => { startNewGame('Beginner'); }, 1000);
     }).catch(error => console.error('Error loading game data:', error));
 
     function loadGameWithData(gameData) {
@@ -532,16 +468,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const cellCoords = `${(rowIndex % 3) + 1}_${(colIndex % 3) + 1}`;
 
                 if (cell !== 0) {
-                    // GIVEN: cell gets darker pastel; number is red
+                    // GIVEN: darker pastel + red number
                     const numberFile = `Number_${cell}`;
                     const numberPath = `assets/Numbers/${subGrid}/Cell_${cellCoords}/${numberFile}.gltf`;
                     loader.load(numberPath, (gltf) => {
                         const part = gltf.scene;
                         part.name = `${cellName}_${numberFile}`;
                         part.traverse((child) => {
-                            if (child.isMesh) {
-                                child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(true) }); // red
-                            }
+                            if (child.isMesh) child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(true) });
                         });
                         numbersGroup.add(part);
                     });
@@ -625,9 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loader.load(numberPath, (gltf) => {
                 const part = gltf.scene;
                 part.name = `${cellName}_${numberFile}`;
-                part.traverse((child) => {
-                    if (child.isMesh) child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(false) }); // black
-                });
+                part.traverse((child) => { if (child.isMesh) child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(false) }); });
                 numbersGroup.add(part);
             });
             displayedNumbers[cellName] = { ...displayedNumbers[cellName], number, modelName: `${cellName}_${numberFile}` };
@@ -662,9 +594,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 loader.load(notePath, (gltf) => {
                     const part = gltf.scene;
                     part.name = fullNoteName;
-                    part.traverse((child) => {
-                        if (child.isMesh) child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(false) }); // black
-                    });
+                    part.traverse((child) => { if (child.isMesh) child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(false) }); });
                     notesGroup.add(part);
                 });
             }
@@ -699,7 +629,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const subGrid = cellName.split('_')[1];
                 selectedCell = { subGrid, cellName };
                 colorCell(parseInt(subGrid,10), cellName, COLORS.SELECTED_CELL); // orange
-                highlightRelatedCells(cellName, true); // all peers light gray (including givens)
+                highlightRelatedCells(cellName, true); // peers gray (including givens)
             }
         }
     }
@@ -715,10 +645,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (selectedCell && key >= '1' && key <= '9') inputNumber(parseInt(key));
     });
 
-    document.querySelectorAll('.difficulty-btn').forEach(btn => {
-        btn.addEventListener('click', () => startNewGame(btn.dataset.difficulty));
+    // Difficulty button listeners (still work, now in panel)
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.difficulty-btn');
+        if (!btn) return;
+        startNewGame(btn.dataset.difficulty);
     });
-    fab.addEventListener('click', () => startNewGame(currentDifficulty));
 
     // Resize
     window.addEventListener('resize', () => {
@@ -741,57 +673,4 @@ document.addEventListener('DOMContentLoaded', () => {
         renderer.render(scene, camera);
     }
     animate();
-
-    if (typeof window.createUIGolfBall === 'function') window.createUIGolfBall();
 });
-
-// Fallback golf ball
-setTimeout(() => {
-    if (!document.getElementById('ui-golf-ball')) {
-        const golfBall = document.createElement('div');
-        golfBall.id = 'ui-golf-ball';
-        golfBall.style.cssText = `
-            position: fixed; bottom: 80px; right: 30px; width: 60px; height: 60px;
-            background: radial-gradient(circle at 30% 30%, #4a90e2, #2563eb, #1e40af);
-            border-radius: 50%; z-index: 9999; cursor: grab;
-            border: 4px solid rgba(255, 255, 255, 0.8);
-            box-shadow: 0 0 30px rgba(37, 99, 235, 1.0), 0 8px 16px rgba(37, 99, 235, 0.5),
-                        inset -3px -3px 6px rgba(0, 0, 0, 0.3), inset 3px 3px 6px rgba(255, 255, 255, 0.4);
-            opacity: 1; visibility: visible; display: block; pointer-events: auto; touch-action: none; user-select: none;
-        `;
-        const canvas = document.querySelector('canvas');
-        let isDragging = false, lastMouseX = 0, lastMouseY = 0;
-        golfBall.addEventListener('mousedown', function(e) {
-            isDragging = true; lastMouseX = e.clientX; lastMouseY = e.clientY; this.style.cursor = 'grabbing'; e.preventDefault();
-        });
-        document.addEventListener('mousemove', function(e) {
-            if (!isDragging || !canvas) return;
-            const dx = e.clientX - lastMouseX, dy = e.clientY - lastMouseY;
-            const rect = canvas.getBoundingClientRect();
-            const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
-            const md = new MouseEvent('mousedown', { clientX: cx, clientY: cy, button: 0, bubbles: true });
-            const mm = new MouseEvent('mousemove', { clientX: cx + dx * 2, clientY: cy + dy * 2, button: 0, bubbles: true });
-            const mu = new MouseEvent('mouseup',   { clientX: cx + dx * 2, clientY: cy + dy * 2, button: 0, bubbles: true });
-            canvas.dispatchEvent(md); setTimeout(() => { canvas.dispatchEvent(mm); setTimeout(() => canvas.dispatchEvent(mu), 10); }, 10);
-            lastMouseX = e.clientX; lastMouseY = e.clientY;
-        });
-        document.addEventListener('mouseup', function() { if (isDragging) { isDragging = false; golfBall.style.cursor = 'grab'; }});
-        golfBall.addEventListener('touchstart', function(e) {
-            isDragging = true; const t = e.touches[0]; lastMouseX = t.clientX; lastMouseY = t.clientY; e.preventDefault();
-        });
-        document.addEventListener('touchmove', function(e) {
-            if (!isDragging || !canvas) return;
-            const t = e.touches[0]; const dx = t.clientX - lastMouseX; const dy = t.clientY - lastMouseY;
-            const rect = canvas.getBoundingClientRect();
-            const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
-            const md = new MouseEvent('mousedown', { clientX: cx, clientY: cy, button: 0, bubbles: true });
-            const mm = new MouseEvent('mousemove', { clientX: cx + dx * 2, clientY: cy + dy * 2, button: 0, bubbles: true });
-            const mu = new MouseEvent('mouseup',   { clientX: cx + dx * 2, clientY: cy + dy * 2, button: 0, bubbles: true });
-            canvas.dispatchEvent(md); setTimeout(() => { canvas.dispatchEvent(mm); setTimeout(() => canvas.dispatchEvent(mu), 10); }, 10);
-            lastMouseX = t.clientX; lastMouseY = t.clientY; e.preventDefault();
-        });
-        document.addEventListener('touchend', function() { isDragging = false; });
-        document.body.appendChild(golfBall);
-        console.log('Fallback golf ball with trackball functionality created successfully');
-    }
-}, 1000);
