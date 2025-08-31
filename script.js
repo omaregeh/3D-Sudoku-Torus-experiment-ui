@@ -37,8 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
     scene.add(cellsGroup, bordersGroup, numbersGroup, notesGroup, decorativeGroup);
 
     // ========= Pastel subgrid styles (cell background colors only) =========
-    // For each subgrid (1..9), define a pastel base color and a slightly darker shade used for GIVEN cells.
-    // Numbers DO NOT use these; given numbers stay red, player numbers stay black.
+    // (Numbers do NOT use these; givens are red, player numbers black.)
     const SUBGRID_STYLES = {
         1: { cell: 0xFFD1E8, givenCell: 0xFFA7C8 }, // baby pink
         2: { cell: 0xFFD8B3, givenCell: 0xFFB67F }, // peach
@@ -52,24 +51,23 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function getBaseCellColorFor(subgrid, isGiven) {
-        const style = SUBGRID_STYLES[subgrid];
-        if (style) return isGiven ? style.givenCell : style.cell;
-        return isGiven ? COLORS.GIVEN_CELL : COLORS.DEFAULT_CELL;
+        const s = SUBGRID_STYLES[subgrid];
+        return s ? (isGiven ? s.givenCell : s.cell) : (isGiven ? COLORS.GIVEN_CELL : COLORS.DEFAULT_CELL);
     }
-    // Numbers: keep original palette (given = red, player = black), regardless of subgrid.
+    // Numbers: given = red, player = black
     function getNumberColor(isGiven) {
         return isGiven ? COLORS.GIVEN_NUMBER : COLORS.PLAYER_NUMBER;
     }
     // ======================================================================
 
-    // Core palette (unchanged)
+    // Core palette
     const COLORS = {
         DEFAULT_CELL: 0xFFFFFF,
-        SELECTED_CELL: 0xFF8C00,
-        RELATED_CELL: 0xFFFF00,
-        GIVEN_NUMBER: 0x8B0000,  // red for givens
-        PLAYER_NUMBER: 0x000000, // black for player inputs
-        GIVEN_CELL: 0xD3D3D3     // only used if a subgrid style is missing
+        SELECTED_CELL: 0xFF8C00, // clicked cell (orange)
+        RELATED_CELL: 0xFFFF00,  // highlight peers (yellow)
+        GIVEN_NUMBER: 0x8B0000,  // red
+        PLAYER_NUMBER: 0x000000, // black
+        GIVEN_CELL: 0xD3D3D3
     };
 
     // Controls
@@ -382,18 +380,26 @@ document.addEventListener('DOMContentLoaded', () => {
         return Array.from(related);
     }
 
+    // ********** THIS IS THE BEHAVIOR YOU ASKED FOR **********
+    // Highlight ALL peers (row, column, box), INCLUDING givens, in yellow.
+    // When clearing, restore each cell to its proper base color (pastel lighter/darker).
     function highlightRelatedCells(cellName, highlight = true) {
         const relatedCells = getRelatedCells(cellName);
+
         relatedCells.forEach(relatedCell => {
-            if (relatedCell !== cellName) {
-                const cellData = displayedNumbers[relatedCell];
-                if (!cellData?.isGiven) {
-                    const subgrid = parseInt(relatedCell.split('_')[1], 10);
-                    colorCell(subgrid, relatedCell, highlight ? COLORS.RELATED_CELL : getBaseCellColorFor(subgrid, false));
-                }
-            }
+            if (relatedCell === cellName) return; // clicked cell stays orange
+
+            const subgrid = parseInt(relatedCell.split('_')[1], 10);
+            const isGiven = !!displayedNumbers[relatedCell]?.isGiven;
+
+            const color = highlight
+                ? COLORS.RELATED_CELL                           // yellow when highlighted
+                : getBaseCellColorFor(subgrid, isGiven);        // back to pastel (darker if given)
+
+            colorCell(subgrid, relatedCell, color);
         });
     }
+    // *********************************************************
 
     function updateAutomaticNotes(cellName, placedNumber) {
         const relatedCells = getRelatedCells(cellName);
@@ -528,7 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const cellCoords = `${(rowIndex % 3) + 1}_${(colIndex % 3) + 1}`;
 
                 if (cell !== 0) {
-                    // GIVEN number: keep numbers red, cell darker shade for that subgrid
+                    // GIVEN: cell gets darker pastel; number is red
                     const numberFile = `Number_${cell}`;
                     const numberPath = `assets/Numbers/${subGrid}/Cell_${cellCoords}/${numberFile}.gltf`;
                     loader.load(numberPath, (gltf) => {
@@ -545,7 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     colorCell(subGrid, cellName, getBaseCellColorFor(subGrid, true));
                     displayedNumbers[cellName] = { number: cell, modelName: `${cellName}_${numberFile}`, isGiven: true };
                 } else {
-                    // EDITABLE cell: base (lighter) shade for that subgrid
+                    // EDITABLE: lighter pastel
                     editableCells.add(cellName);
                     colorCell(subGrid, cellName, getBaseCellColorFor(subGrid, false));
                     displayedNumbers[cellName] = { number: null, modelName: null, isGiven: false };
@@ -615,7 +621,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 note.traverse((child) => { if (child.isMesh) { child.geometry.dispose(); child.material.dispose(); } });
             });
 
-            // Add new number (player): keep black
+            // Add new number (player): black
             const numberFile = `Number_${number}`;
             const numberPath = `assets/Numbers/${subGrid}/Cell_${cellCoords}/${numberFile}.gltf`;
             loader.load(numberPath, (gltf) => {
@@ -640,7 +646,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 setTimeout(() => startNewGame(currentDifficulty), 3000);
             }
         } else {
-            // Notes mode: still keep notes in player color (black)
+            // Notes mode: black
             if (displayedNumbers[cellName].number !== null) {
                 removeOldNumber(cellName);
                 const coords = getCellCoordinates(cellName);
@@ -694,8 +700,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Select new
                 const subGrid = cellName.split('_')[1];
                 selectedCell = { subGrid, cellName };
-                colorCell(parseInt(subGrid,10), cellName, COLORS.SELECTED_CELL);
-                highlightRelatedCells(cellName, true);
+                colorCell(parseInt(subGrid,10), cellName, COLORS.SELECTED_CELL); // orange
+                highlightRelatedCells(cellName, true); // all peers yellow (including givens)
             }
         }
     }
