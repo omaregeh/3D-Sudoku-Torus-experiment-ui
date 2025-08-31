@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const COLORS = {
         DEFAULT_CELL: 0xFFFFFF,
         SELECTED_CELL: 0xFF8C00, // clicked cell (orange)
-        RELATED_CELL: 0xFFFF00,  // highlight peers (yellow)
+        RELATED_CELL: 0xE5E7EB,  // light gray peers highlight
         GIVEN_NUMBER: 0x8B0000,  // red
         PLAYER_NUMBER: 0x000000, // black
         GIVEN_CELL: 0xD3D3D3
@@ -380,8 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return Array.from(related);
     }
 
-    // ********** THIS IS THE BEHAVIOR YOU ASKED FOR **********
-    // Highlight ALL peers (row, column, box), INCLUDING givens, in yellow.
+    // Highlight ALL peers (row, column, box), INCLUDING givens, in light gray.
     // When clearing, restore each cell to its proper base color (pastel lighter/darker).
     function highlightRelatedCells(cellName, highlight = true) {
         const relatedCells = getRelatedCells(cellName);
@@ -393,13 +392,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const isGiven = !!displayedNumbers[relatedCell]?.isGiven;
 
             const color = highlight
-                ? COLORS.RELATED_CELL                           // yellow when highlighted
+                ? COLORS.RELATED_CELL                           // light gray when highlighted
                 : getBaseCellColorFor(subgrid, isGiven);        // back to pastel (darker if given)
 
             colorCell(subgrid, relatedCell, color);
         });
     }
-    // *********************************************************
 
     function updateAutomaticNotes(cellName, placedNumber) {
         const relatedCells = getRelatedCells(cellName);
@@ -701,7 +699,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const subGrid = cellName.split('_')[1];
                 selectedCell = { subGrid, cellName };
                 colorCell(parseInt(subGrid,10), cellName, COLORS.SELECTED_CELL); // orange
-                highlightRelatedCells(cellName, true); // all peers yellow (including givens)
+                highlightRelatedCells(cellName, true); // all peers light gray (including givens)
             }
         }
     }
