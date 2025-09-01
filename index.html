@@ -2,32 +2,23 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <!-- Important for iOS Safari (notch + shrinking address bar) -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>3D Sudoku Torus</title>
 
-  <style>
-    html, body {
-      overscroll-behavior: none;
-      touch-action: none;
-      position: fixed;
-      overflow: hidden;
-      width: 100%;
-      height: 100%;
-      margin: 0;
-    }
-  </style>
-
-  <!-- bump v= whenever you update CSS -->
-  <link rel="stylesheet" href="style.css?v=20" />
+  <!-- bump v= any time you change CSS to avoid cache -->
+  <link rel="stylesheet" href="style.css?v=17" />
 </head>
 <body>
+  <!-- Right-side / bottom control panel (styled by CSS) -->
+  <div class="control-panel"></div>
+
   <!-- Three.js + helpers -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/loaders/GLTFLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/controls/TrackballControls.js"></script>
 
-  <!-- bump v= whenever you update JS -->
+  <!-- bump v= any time you change JS to avoid cache -->
   <script src="script.js?v=25"></script>
 </body>
 </html>
