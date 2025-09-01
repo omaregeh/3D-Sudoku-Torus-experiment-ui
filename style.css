@@ -19,7 +19,7 @@ body {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
   display: flex;
-  flex-direction: column;
+  flex-direction: column;      /* trackpad can grow */
   padding: 16px;
   box-sizing: border-box;
   overflow-y: auto;
@@ -131,18 +131,20 @@ body {
 }
 
 /* ——— Trackpad ——— */
-/* Bigger trackpad + equal spacing above/below (triple the old 16px gap -> 48px) */
+/* Fills remaining vertical space and sits closer to the bottom */
 .trackpad-wrap {
   position: relative;
-  margin-top: 48px;       /* tripled gap above (was 16px) */
-  margin-bottom: 48px;    /* same gap below */
-  height: 340px;          /* larger trackpad (was 220px) */
+  margin-top: 48px;           /* triple gap above Erase (keep this) */
+  margin-bottom: 16px;        /* smaller gap to bottom so it's “closer” */
+  flex: 1 1 auto;             /* grow to fill leftover space */
+  min-height: 320px;          /* fallback height for short viewports */
   border-radius: 16px;
   border: 2px solid #e5e7eb;
   background: linear-gradient(180deg, #fafafa, #f3f4f6);
   box-shadow: 0 4px 12px rgba(0,0,0,0.06);
 }
-/* interactive surface stays transparent so label shows; captures input */
+
+/* keep the interactive surface transparent so the label shows */
 .trackpad-surface {
   position: absolute;
   inset: 0;
@@ -150,7 +152,7 @@ body {
   background: transparent;
   cursor: grab;
   touch-action: none;
-  z-index: 2; /* above label to capture events */
+  z-index: 2;                 /* captures events above the label */
 }
 .trackpad-surface:active { cursor: grabbing; }
 
@@ -163,13 +165,22 @@ body {
   color: #111827;
   opacity: 0.6;
   user-select: none;
-  pointer-events: none; /* not selectable/clickable */
-  z-index: 1;           /* below the surface */
+  pointer-events: none;       /* not selectable/clickable */
+  z-index: 1;                 /* below the surface */
 }
 
 /* ——— Win/achievement UI ——— */
-.celebration-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 2000; animation: fadeIn 0.3s ease; }
-.celebration-content { background: #ffffff; padding: 40px; border-radius: 20px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.25); animation: slideUp 0.5s ease; }
+.celebration-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.8);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2000; animation: fadeIn 0.3s ease;
+}
+.celebration-content {
+  background: #ffffff; padding: 40px; border-radius: 20px;
+  text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.25);
+  animation: slideUp 0.5s ease;
+}
 .celebration-icon { font-size: 60px; margin-bottom: 20px; animation: bounce 1s infinite; }
 .celebration-content h2 { margin: 0 0 20px; color: #334155; font-size: 28px; }
 .completion-time { font-size: 24px; color: #6366f1; font-weight: 800; margin: 10px 0; }
@@ -177,7 +188,13 @@ body {
 .celebration-stats { display: flex; gap: 20px; justify-content: center; margin: 20px 0; font-size: 14px; color: #94a3b8; }
 .next-puzzle-text { color: #94a3b8; font-style: italic; margin-top: 20px; }
 
-.achievement-toast { position: fixed; top: 20px; right: 20px; background: #22c55e; color: white; padding: 12px 20px; border-radius: 25px; box-shadow: 0 4px 12px rgba(34,197,94,0.35); z-index: 1500; transform: translateY(-15px); opacity: 0; transition: all 0.25s ease; font-weight: 600; }
+.achievement-toast {
+  position: fixed; top: 20px; right: 20px;
+  background: #22c55e; color: white; padding: 12px 20px; border-radius: 25px;
+  box-shadow: 0 4px 12px rgba(34,197,94,0.35);
+  z-index: 1500; transform: translateY(-15px); opacity: 0;
+  transition: all 0.25s ease; font-weight: 600;
+}
 .achievement-toast.show { transform: translateY(0); opacity: 1; }
 
 .confetti { position: fixed; width: 10px; height: 10px; border-radius: 50%; animation: confettiFall 3s linear; z-index: 1999; }
@@ -209,6 +226,10 @@ body {
   .utility-buttons { flex-direction: row; }
   .utility-buttons button { flex: 1; padding: 10px; font-size: 14px; }
 
-  /* slightly smaller trackpad for mobile */
-  .trackpad-wrap { height: 220px; margin-top: 32px; margin-bottom: 32px; }
+  /* mobile: still fills remaining space, but allow a smaller min-height */
+  .trackpad-wrap {
+    min-height: 220px;
+    margin-top: 32px;
+    margin-bottom: 16px;
+  }
 }
