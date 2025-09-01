@@ -1,4 +1,4 @@
-/* ——— Base layout ——— */
+/* ——— Base layout (use svh so iOS Safari bars don’t crop) ——— */
 body {
   margin: 0;
   padding: 0;
@@ -6,27 +6,28 @@ body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   display: flex;
-  height: 100vh;
+  height: 100svh; /* key for iOS Safari */
 }
 
-/* ——— Right-side control panel ——— */
+/* ——— Right-side control panel (desktop) ——— */
 .control-panel {
   position: fixed;
   right: 0;
   top: 0;
   width: 30%;
-  height: 100vh;
+  height: 100svh;
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
   display: flex;
-  flex-direction: column;      /* trackpad can grow */
+  flex-direction: column;      /* lets the trackpad grow */
   padding: 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom)); /* iOS safe-area */
   box-sizing: border-box;
   overflow-y: auto;
   border-left: 1px solid rgba(0,0,0,0.06);
 }
 
-/* top row (difficulty + timer) */
+/* ——— Top row (difficulty + timer) ——— */
 .top-row {
   display: flex;
   align-items: center;
@@ -134,8 +135,8 @@ body {
 /* Fills remaining vertical space and sits closer to the bottom */
 .trackpad-wrap {
   position: relative;
-  margin-top: 48px;           /* triple gap above Erase (keep this) */
-  margin-bottom: 16px;        /* smaller gap to bottom so it's “closer” */
+  margin-top: 48px;           /* triple gap above Erase */
+  margin-bottom: 16px;        /* smaller gap at bottom */
   flex: 1 1 auto;             /* grow to fill leftover space */
   min-height: 320px;          /* fallback height for short viewports */
   border-radius: 16px;
@@ -203,9 +204,9 @@ body {
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { transform: translateY(50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes bounce { 0%,20%,50%,80%,100% { transform: translateY(0); } 40% { transform: translateY(-10px); } 60% { transform: translateY(-5px); } }
-@keyframes confettiFall { 0% { transform: translateY(-100vh) rotate(0deg); opacity: 1; } 100% { transform: translateY(100vh) rotate(720deg); opacity: 0; } }
+@keyframes confettiFall { 0% { transform: translateY(-100svh) rotate(0deg); opacity: 1; } 100% { transform: translateY(100svh) rotate(720deg); opacity: 0; } }
 
-/* ——— Mobile ——— */
+/* ——— Mobile (panel at bottom; canvas gets the top) ——— */
 @media (max-width: 768px) {
   body { flex-direction: column; }
 
@@ -213,8 +214,9 @@ body {
     position: fixed;
     right: 0; left: 0; bottom: 0; top: auto;
     width: 100%;
-    height: 50%;
+    height: 46svh; /* change to 44svh or 42svh if you want more canvas space */
     border-radius: 20px 20px 0 0;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
   }
 
   .difficulty-btn { padding: 5px 10px; font-size: 12px; }
@@ -226,7 +228,6 @@ body {
   .utility-buttons { flex-direction: row; }
   .utility-buttons button { flex: 1; padding: 10px; font-size: 14px; }
 
-  /* mobile: still fills remaining space, but allow a smaller min-height */
   .trackpad-wrap {
     min-height: 220px;
     margin-top: 32px;
