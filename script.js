@@ -1,4 +1,5 @@
-// BUILD v14 — trackpad drag + label; gray peer highlight (incl. givens); pastel subgrids
+// BUILD v15 — pointer-based trackpad (no recursion), gray peer highlight incl. givens,
+// pastel 3×3 colors, givens in red, no header/fab/ball.
 
 document.addEventListener('DOMContentLoaded', () => {
   let sudokuSolution = [];
@@ -42,7 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const COLORS = {
     DEFAULT_CELL: 0xFFFFFF,
     SELECTED_CELL: 0xFF8C00, // orange
-    RELATED_CELL: 0x9CA3AF,  // gray peers highlight
+    RELATED_CELL: 0x9CA3AF,  // darker gray peers highlight
     GIVEN_NUMBER: 0x8B0000,  // red
     PLAYER_NUMBER: 0x000000, // black
     GIVEN_CELL: 0xD3D3D3
@@ -153,33 +154,23 @@ document.addEventListener('DOMContentLoaded', () => {
   eraseButton.addEventListener('touchstart', (e)=>{ e.preventDefault(); doErase(); }, { passive:false });
   utilityButtons.appendChild(eraseButton);
 
-  // ===== Trackpad (under Erase) =====
+  // ===== Trackpad (under Erase) — pointer events, no recursion =====
   const trackpadWrap = document.createElement('div');
   trackpadWrap.className = 'trackpad-wrap';
   controlPanel.appendChild(trackpadWrap);
 
-  // Centered label (non-interactive, under the surface)
+  // label (under surface)
   const trackpadLabel = document.createElement('div');
   trackpadLabel.className = 'trackpad-label';
   trackpadLabel.textContent = 'Trackpad';
   trackpadWrap.appendChild(trackpadLabel);
 
-  // Interactive transparent layer
+  // interactive transparent surface
   const trackpadSurface = document.createElement('div');
   trackpadSurface.className = 'trackpad-surface';
   trackpadWrap.appendChild(trackpadSurface);
 
-  // Trackpad → synthetic mouse events for TrackballControls
-  let tpDragging = false;
-  let tpLastX = 0, tpLastY = 0;
-  let tpCumX = 0, tpCumY = 0;
-
-  function pointFromEvent(e) {
-    if (e.touches && e.touches[0]) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    return { x: e.clientX, y: e.clientY };
-  }
-
-  // Send mousedown to canvas, move/up to document (TrackballControls listens on doc while dragging)
+  // helper to send synthetic mouse events to TrackballControls
   function sendSynthetic(type, dx, dy) {
     const rect = renderer.domElement.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
@@ -193,44 +184,46 @@ document.addEventListener('DOMContentLoaded', () => {
       cancelable: true
     });
     if (type === 'mousedown') {
-      renderer.domElement.dispatchEvent(ev);
+      renderer.domElement.dispatchEvent(ev); // TrackballControls sets state here
     } else {
-      document.dispatchEvent(ev);
+      document.dispatchEvent(ev); // TrackballControls listens on document while dragging
     }
   }
 
-  function tpStart(e) {
+  let tpDragging = false;
+  let tpLastX = 0, tpLastY = 0;
+  let tpCumX = 0, tpCumY = 0;
+
+  trackpadSurface.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    const p = pointFromEvent(e);
+    trackpadSurface.setPointerCapture(e.pointerId);
     tpDragging = true;
-    tpLastX = p.x; tpLastY = p.y;
-    tpCumX = 0; tpCumY = 0;
+    tpLastX = e.clientX;
+    tpLastY = e.clientY;
+    tpCumX = 0;
+    tpCumY = 0;
     sendSynthetic('mousedown', 0, 0);
-  }
-  function tpMove(e) {
+  });
+  trackpadSurface.addEventListener('pointermove', (e) => {
     if (!tpDragging) return;
     e.preventDefault();
-    const p = pointFromEvent(e);
-    const dx = (p.x - tpLastX) * 2; // sensitivity
-    const dy = (p.y - tpLastY) * 2;
-    tpCumX += dx; tpCumY += dy;
-    tpLastX = p.x; tpLastY = p.y;
+    const dx = (e.clientX - tpLastX) * 2; // sensitivity
+    const dy = (e.clientY - tpLastY) * 2;
+    tpCumX += dx;
+    tpCumY += dy;
+    tpLastX = e.clientX;
+    tpLastY = e.clientY;
     sendSynthetic('mousemove', tpCumX, tpCumY);
-  }
-  function tpEnd(e) {
+  });
+  function endTrackpadDrag(e) {
     if (!tpDragging) return;
     e.preventDefault();
     tpDragging = false;
+    try { trackpadSurface.releasePointerCapture(e.pointerId); } catch (_) {}
     sendSynthetic('mouseup', tpCumX, tpCumY);
   }
-
-  trackpadSurface.addEventListener('mousedown', tpStart);
-  window.addEventListener('mousemove', tpMove);
-  window.addEventListener('mouseup', tpEnd);
-
-  trackpadSurface.addEventListener('touchstart', tpStart, { passive:false });
-  window.addEventListener('touchmove', tpMove, { passive:false });
-  window.addEventListener('touchend', tpEnd, { passive:false });
+  trackpadSurface.addEventListener('pointerup', endTrackpadDrag);
+  trackpadSurface.addEventListener('pointercancel', endTrackpadDrag);
 
   // ===== Sudoku helpers =====
   function checkSolution() {
