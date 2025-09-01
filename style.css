@@ -41,6 +41,7 @@ body {
   flex-wrap: wrap;
   gap: 8px;
 }
+
 .difficulty-btn {
   padding: 6px 12px;
   border: 2px solid #e5e7eb;
@@ -133,8 +134,8 @@ body {
 /* Fills remaining vertical space and sits closer to the bottom */
 .trackpad-wrap {
   position: relative;
-  margin-top: 48px;           /* triple gap above Erase */
-  margin-bottom: 16px;        /* smaller gap to bottom so it's closer */
+  margin-top: 48px;           /* triple gap above Erase (keep this) */
+  margin-bottom: 16px;        /* smaller gap to bottom so it's “closer” */
   flex: 1 1 auto;             /* grow to fill leftover space */
   min-height: 320px;          /* fallback height for short viewports */
   border-radius: 16px;
@@ -143,7 +144,7 @@ body {
   box-shadow: 0 4px 12px rgba(0,0,0,0.06);
 }
 
-/* interactive surface stays transparent so the label shows; captures input */
+/* keep the interactive surface transparent so the label shows */
 .trackpad-surface {
   position: absolute;
   inset: 0;
