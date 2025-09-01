@@ -50,12 +50,12 @@ document.addEventListener('DOMContentLoaded', () => {
     1: { base: 0xE0F2FE, given: 0xBAE6FD }, // baby blue
     2: { base: 0xFEF9C3, given: 0xFDE68A }, // baby yellow
     3: { base: 0xFCE7F3, given: 0xFBCFE8 }, // baby pink
-    4: { base: 0xDCFCE7, given: 0xBBF7D0 }, // baby green (minty)
-    5: { base: 0xE9D5FF, given: 0xD8B4FE }, // baby purple (lavender)
+    4: { base: 0xDCFCE7, given: 0xBBF7D0 }, // baby green
+    5: { base: 0xE9D5FF, given: 0xD8B4FE }, // baby lavender
     6: { base: 0xFFE4E6, given: 0xFECDD3 }, // baby coral/peach
     7: { base: 0xE2E8F0, given: 0xCBD5E1 }, // baby gray
     8: { base: 0xF5D0FE, given: 0xF0ABFC }, // baby magenta-lilac
-    9: { base: 0xCCFBF1, given: 0x99F6E4 }, // baby aqua/mint
+    9: { base: 0xCCFBF1, given: 0x99F6E4 }, // baby aqua
   };
 
   const COLORS = {
@@ -72,7 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
   controls.rotateSpeed = 5.0;
   controls.dynamicDampingFactor = 0.3;
   controls.noZoom = true;
-  controls.noPan = true; // we toggle this ON temporarily while trackpad is panning
+  controls.noPan = true; // toggled ON while trackpad is panning
   controls.target.set(0, 0, 0);
   controls.update();
 
@@ -653,10 +653,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const r = canvas.getBoundingClientRect();
       return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
     }
+
+    // KEY: bubbles: true so TrackballControls' document listeners see these events
     function sendMouse(type, x, y, button, buttons) {
-      // IMPORTANT: bubbles=false to avoid recursion into window listeners
       const e = new MouseEvent(type, {
-        bubbles: false,
+        bubbles: true,
         cancelable: true,
         view: window,
         clientX: x,
@@ -664,6 +665,7 @@ document.addEventListener('DOMContentLoaded', () => {
         button,
         buttons
       });
+      e.syntheticTrackpad = true; // tag (not strictly required)
       canvas.dispatchEvent(e);
     }
 
@@ -708,12 +710,12 @@ document.addEventListener('DOMContentLoaded', () => {
     surface.addEventListener('contextmenu', e => e.preventDefault());
     surface.addEventListener('mousedown', (e) => {
       e.preventDefault();
-      const button = (e.button === 2 || e.shiftKey) ? 2 : 0;
+      const button = (e.button === 2 || e.shiftKey) ? 2 : 0; // left = orbit, right/Shift+left = pan
       beginDrag(button);
       lastX = e.clientX; lastY = e.clientY;
     });
 
-    // Global mousemove/mouseup: ignore synthetic events (isTrusted === false)
+    // Global mousemove/mouseup: ignore synthetic (non-trusted) to avoid recursion
     window.addEventListener('mousemove', (e) => {
       if (!dragging || e.isTrusted === false) return;
       const dx = e.clientX - lastX;
@@ -727,7 +729,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     window.addEventListener('blur', endDrag);
 
-    // Touch: 1 finger = orbit, 2+ = pan
+    // Touch: 1 finger = orbit, 2+ fingers = pan
     surface.addEventListener('touchstart', (e) => {
       e.preventDefault();
       const kind = (e.touches.length >= 2) ? 2 : 0;
@@ -751,7 +753,7 @@ document.addEventListener('DOMContentLoaded', () => {
       endDrag();
     }, { passive: false });
 
-    console.log('CAD-style trackpad ready: orbit=left-drag, pan=right-drag/Shift+left, two fingers for pan.');
+    console.log('CAD-style trackpad ready: orbit=left-drag, pan=right-drag/Shift+left, two-finger touch pans.');
   }
 
   // ==========================
