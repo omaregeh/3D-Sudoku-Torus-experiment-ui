@@ -1,13 +1,30 @@
-// BUILD v21 — Mouse uses TrackballControls; trackpad rotates the torus (worldGroup)
+// script.js — full drop-in
 
 document.addEventListener('DOMContentLoaded', () => {
+  /* ============================================================
+   * Globals
+   * ============================================================ */
   let sudokuSolution = [];
+  let selectedCell = null;
+  let currentInputMode = 'numbers';
+  let currentDifficulty = 'Beginner';
+  let gameTimer = 0;
+  let timerInterval = null;
+  let gameStartTime = null;
+  let gameInProgress = false;
 
-  // -------- Scene / Camera / Renderer
+  const editableCells = new Set();               // which cells a player can edit
+  const displayedNumbers = {};                   // cellName -> { number, modelName, isGiven }
+  let sudokuGrid = Array(9).fill().map(() => Array(9).fill(null));
+
+  /* ============================================================
+   * Scene / Camera / Renderer
+   * ============================================================ */
   const scene = new THREE.Scene();
+
   const camera = new THREE.PerspectiveCamera(
     35,
-    (window.innerWidth * 0.7) / window.innerHeight,
+    1,         // we’ll set real aspect in applyLayout()
     0.01,
     100
   );
@@ -16,544 +33,729 @@ document.addEventListener('DOMContentLoaded', () => {
   camera.updateProjectionMatrix();
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(window.innerWidth * 0.7, window.innerHeight);
-  document.body.appendChild(renderer.domElement);
 
-  // -------- Lights
-  scene.add(new THREE.AmbientLight(0xffffff, 1));
-  const dir = new THREE.DirectionalLight(0xffffff, 0.1);
-  dir.position.set(15, 25, 15);
-  scene.add(dir);
+  // Lights
+  const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.1);
+  directionalLight.position.set(15, 25, 15);
+  scene.add(ambientLight);
+  scene.add(directionalLight);
 
-  // -------- Loader & Groups
+  // Loader + groups
   const loader = new THREE.GLTFLoader();
+  const cellsGroup = new THREE.Group();
+  const bordersGroup = new THREE.Group();
+  const numbersGroup = new THREE.Group();
+  const notesGroup = new THREE.Group();
 
-  // worldGroup wraps the whole puzzle so we can rotate it with the trackpad
-  const worldGroup = new THREE.Group();
-  scene.add(worldGroup);
+  scene.add(cellsGroup);
+  scene.add(bordersGroup);
+  scene.add(numbersGroup);
+  scene.add(notesGroup);
 
-  const cellsGroup      = new THREE.Group();
-  const bordersGroup    = new THREE.Group();
-  const numbersGroup    = new THREE.Group();
-  const notesGroup      = new THREE.Group();
-  const decorativeGroup = new THREE.Group();
-
-  const scaleFactor = window.innerWidth < 768 ? 6.5 : 5;
-  cellsGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
-  bordersGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
-  numbersGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
-  notesGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
-  decorativeGroup.scale.set(scaleFactor * 0.3, scaleFactor * 0.3, scaleFactor * 0.3);
-
-  worldGroup.add(cellsGroup, bordersGroup, numbersGroup, notesGroup, decorativeGroup);
-
-  // -------- Colors & Pastels
-  const COLORS = {
-    DEFAULT_CELL: 0xffffff,
-    SELECTED_CELL: 0xff8c00, // orange
-    RELATED_CELL: 0x9ca3af,  // darker gray for peers (incl. givens)
-    GIVEN_NUMBER: 0x8b0000,  // red
-    PLAYER_NUMBER: 0x000000, // black
-    GIVEN_CELL: 0xd3d3d3
-  };
-  const SUBGRID_STYLES = {
-    1: { cell: 0xffd1e8, givenCell: 0xffa7c8 }, // baby pink
-    2: { cell: 0xffd8b3, givenCell: 0xffb67f }, // peach
-    3: { cell: 0xfff4b3, givenCell: 0xffe066 }, // pastel yellow
-    4: { cell: 0xcfffe5, givenCell: 0x9de8c7 }, // mint
-    5: { cell: 0xb3e5ff, givenCell: 0x7fcfff }, // baby blue
-    6: { cell: 0xe2d6ff, givenCell: 0xc8b5ff }, // lavender
-    7: { cell: 0xd7f8b7, givenCell: 0xa8e57f }, // pastel green
-    8: { cell: 0xffc8c2, givenCell: 0xffa39a }, // coral
-    9: { cell: 0xc6f3f6, givenCell: 0x95e3e8 }, // light teal
-  };
-  const getBaseCellColorFor = (sg, isGiven) => {
-    const s = SUBGRID_STYLES[sg];
-    return s ? (isGiven ? s.givenCell : s.cell) : (isGiven ? COLORS.GIVEN_CELL : COLORS.DEFAULT_CELL);
-  };
-  const getNumberColor = (isGiven) => (isGiven ? COLORS.GIVEN_NUMBER : COLORS.PLAYER_NUMBER);
-
-  // -------- TrackballControls for MOUSE (unchanged)
+  // TrackballControls (mouse behavior stays native)
   const controls = new THREE.TrackballControls(camera, renderer.domElement);
   controls.rotateSpeed = 5.0;
   controls.dynamicDampingFactor = 0.3;
   controls.noZoom = true;
-  controls.noPan  = true;
+  controls.noPan = true;
   controls.target.set(0, 0, 0);
   controls.update();
 
-  // -------- Game state
-  let selectedCell = null;
-  let currentInputMode = "numbers";
-  let currentDifficulty = 'Beginner';
-  let gameTimer = 0;
-  let timerInterval = null;
-  let gameStartTime = null;
-  let gameInProgress = false;
+  // expose for debugging
+  window.camera = camera;
+  window.controls = controls;
 
-  const editableCells = new Set();
-  const displayedNumbers = {};
-  let sudokuGrid = Array(9).fill().map(() => Array(9).fill(null));
-  let gameStats = JSON.parse(localStorage.getItem('sudokuStats')) || {
-    gamesPlayed: 0, bestTimes: {}, currentStreak: 0, achievements: []
+  /* ============================================================
+   * Colors & styling
+   * ============================================================ */
+
+  // Pastel 3×3 colors (light) by subgrid 1..9
+  const SUBGRID_LIGHT = {
+    1: 0xE6F6FF, // baby blue
+    2: 0xFFF3C4, // baby yellow
+    3: 0xFFD6E7, // baby pink
+    4: 0xD7F7D9, // baby green
+    5: 0xE7E3FF, // baby purple
+    6: 0xCFF1F7, // baby teal
+    7: 0xFFE1CC, // baby orange/peach
+    8: 0xDDE3EA, // baby grey-blue
+    9: 0xF1F5F9  // very light slate
   };
 
-  // -------- UI (right panel)
-  const controlPanel = document.createElement('div');
-  controlPanel.className = 'control-panel';
-  document.body.appendChild(controlPanel);
+  // Darker versions for "given" cells in that subgrid
+  const SUBGRID_DARK = {
+    1: 0xCFEFFF,
+    2: 0xFFE59E,
+    3: 0xFFBFD3,
+    4: 0xB8ECC0,
+    5: 0xD3CCFF,
+    6: 0xAEE3ED,
+    7: 0xFFD0B2,
+    8: 0xC8D2DC,
+    9: 0xE2E8F0
+  };
 
+  const COLORS = {
+    PLAYER_NUMBER: 0x000000, // black
+    GIVEN_NUMBER:  0x8B0000, // dark red
+    RELATED_CELL:  0xA0A4A8, // darker grey for peer highlight
+    SELECTED_CELL: 0xFF8C00  // orange (clicked)
+  };
+
+  function getBaseCellColorFor(subGrid, isGiven) {
+    const s = Number(subGrid);
+    return isGiven ? SUBGRID_DARK[s] : SUBGRID_LIGHT[s];
+  }
+
+  function getNumberColor(isGiven) {
+    return isGiven ? COLORS.GIVEN_NUMBER : COLORS.PLAYER_NUMBER;
+  }
+
+  /* ============================================================
+   * UI: Build control panel (difficulty, timer, number pad, buttons, trackpad)
+   * ============================================================ */
+  const panel = document.querySelector('.control-panel');
+
+  // Top row: difficulty + timer
   const topRow = document.createElement('div');
   topRow.className = 'top-row';
-  controlPanel.appendChild(topRow);
 
-  const difficultySelector = document.createElement('div');
-  difficultySelector.className = 'difficulty-selector';
-  difficultySelector.innerHTML = `
-    <button class="difficulty-btn active" data-difficulty="Beginner">Beginner</button>
-    <button class="difficulty-btn" data-difficulty="Intermediate">Intermediate</button>
-    <button class="difficulty-btn" data-difficulty="Expert">Expert</button>
-    <button class="difficulty-btn" data-difficulty="Master">Master</button>
-  `;
-  topRow.appendChild(difficultySelector);
+  const diffSel = document.createElement('div');
+  diffSel.className = 'difficulty-selector';
+  const difficulties = ['Beginner', 'Intermediate', 'Expert', 'Master'];
 
-  const timerDisplay = document.createElement('div');
-  timerDisplay.className = 'timer-display';
-  timerDisplay.textContent = '00:00';
-  topRow.appendChild(timerDisplay);
+  difficulties.forEach((d, idx) => {
+    const b = document.createElement('button');
+    b.className = 'difficulty-btn' + (idx === 0 ? ' active' : '');
+    b.dataset.difficulty = d;
+    b.textContent = d;
+    b.addEventListener('click', () => startNewGame(d));
+    diffSel.appendChild(b);
+  });
 
+  const timerEl = document.createElement('div');
+  timerEl.className = 'timer-display';
+  timerEl.textContent = '00:00';
+
+  topRow.appendChild(diffSel);
+  topRow.appendChild(timerEl);
+  panel.appendChild(topRow);
+
+  // Number pad
   const numberPad = document.createElement('div');
   numberPad.className = 'number-pad';
-  controlPanel.appendChild(numberPad);
   for (let i = 1; i <= 9; i++) {
-    const b = document.createElement('button');
-    b.innerText = i;
-    b.addEventListener('click', () => { if (selectedCell) inputNumber(i); });
-    b.addEventListener('touchstart', (e)=>{ e.preventDefault(); if (selectedCell) inputNumber(i); }, { passive:false });
-    numberPad.appendChild(b);
+    const btn = document.createElement('button');
+    btn.textContent = i;
+    btn.addEventListener('click', () => {
+      if (selectedCell) inputNumber(i);
+    });
+    btn.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (selectedCell) inputNumber(i);
+    }, { passive: false });
+    numberPad.appendChild(btn);
   }
+  panel.appendChild(numberPad);
 
-  const utilityButtons = document.createElement('div');
-  utilityButtons.className = 'utility-buttons';
-  controlPanel.appendChild(utilityButtons);
+  // Utility buttons
+  const util = document.createElement('div');
+  util.className = 'utility-buttons';
 
   const modeToggle = document.createElement('button');
-  modeToggle.innerText = "Toggle: Numbers";
-  function toggleMode() {
-    currentInputMode = currentInputMode === "numbers" ? "additionalNumbers" : "numbers";
-    modeToggle.innerText = `Toggle: ${currentInputMode === "numbers" ? "Numbers" : "Additional Numbers"}`;
-  }
+  modeToggle.textContent = 'Toggle: Numbers';
   modeToggle.addEventListener('click', toggleMode);
-  modeToggle.addEventListener('touchstart', (e)=>{ e.preventDefault(); toggleMode(); }, { passive:false });
-  utilityButtons.appendChild(modeToggle);
+  modeToggle.addEventListener('touchstart', (e) => { e.preventDefault(); toggleMode(); }, { passive: false });
+  util.appendChild(modeToggle);
 
   const eraseButton = document.createElement('button');
-  eraseButton.innerText = "Erase";
-  function doErase(){ if (selectedCell) eraseCell(selectedCell.cellName); }
-  eraseButton.addEventListener('click', doErase);
-  eraseButton.addEventListener('touchstart', (e)=>{ e.preventDefault(); doErase(); }, { passive:false });
-  utilityButtons.appendChild(eraseButton);
+  eraseButton.textContent = 'Erase';
+  eraseButton.addEventListener('click', () => { if (selectedCell) eraseCell(selectedCell.cellName); });
+  eraseButton.addEventListener('touchstart', (e) => { e.preventDefault(); if (selectedCell) eraseCell(selectedCell.cellName); }, { passive: false });
+  util.appendChild(eraseButton);
 
-  // -------- Trackpad that rotates the TORUS (worldGroup)
-  const trackpadWrap   = document.createElement('div');
+  panel.appendChild(util);
+
+  // Trackpad
+  const trackpadWrap = document.createElement('div');
   trackpadWrap.className = 'trackpad-wrap';
-  controlPanel.appendChild(trackpadWrap);
-
-  const trackpadLabel  = document.createElement('div');
-  trackpadLabel.className = 'trackpad-label';
-  trackpadLabel.textContent = 'Trackpad';
-  trackpadWrap.appendChild(trackpadLabel);
 
   const trackpadSurface = document.createElement('div');
   trackpadSurface.className = 'trackpad-surface';
+
+  const trackpadLabel = document.createElement('div');
+  trackpadLabel.className = 'trackpad-label';
+  trackpadLabel.textContent = 'Trackpad';
+
   trackpadWrap.appendChild(trackpadSurface);
+  trackpadWrap.appendChild(trackpadLabel);
+  panel.appendChild(trackpadWrap);
 
-  // Rotation math (feel free to tweak sensitivity)
-  const ROTATE_PER_PX = Math.PI / 600; // smaller = slower, bigger = faster
-  let tpDragging = false;
-  let tpPrevX = 0, tpPrevY = 0;
-  const _q = new THREE.Quaternion();
-  const _axisY = new THREE.Vector3(0, 1, 0); // yaw
-  const _axisX = new THREE.Vector3(1, 0, 0); // pitch
-
-  trackpadSurface.addEventListener('pointerdown', (e) => {
-    trackpadSurface.setPointerCapture(e.pointerId);
-    tpDragging = true;
-    tpPrevX = e.clientX;
-    tpPrevY = e.clientY;
-  });
-  trackpadSurface.addEventListener('pointermove', (e) => {
-    if (!tpDragging) return;
-    const dx = e.clientX - tpPrevX;
-    const dy = e.clientY - tpPrevY;
-    tpPrevX = e.clientX;
-    tpPrevY = e.clientY;
-
-    // Yaw (left/right): around world Y
-    _q.setFromAxisAngle(_axisY, -dx * ROTATE_PER_PX);
-    worldGroup.quaternion.premultiply(_q);
-
-    // Pitch (up/down): around world X
-    _q.setFromAxisAngle(_axisX, -dy * ROTATE_PER_PX);
-    worldGroup.quaternion.premultiply(_q);
-  });
-  function tpEnd(e){
-    if (!tpDragging) return;
-    try { trackpadSurface.releasePointerCapture(e.pointerId); } catch {}
-    tpDragging = false;
+  function toggleMode() {
+    currentInputMode = currentInputMode === 'numbers' ? 'additionalNumbers' : 'numbers';
+    modeToggle.textContent = `Toggle: ${currentInputMode === 'numbers' ? 'Numbers' : 'Additional Numbers'}`;
   }
-  trackpadSurface.addEventListener('pointerup', tpEnd);
-  trackpadSurface.addEventListener('pointercancel', tpEnd);
-  trackpadSurface.addEventListener('lostpointercapture', tpEnd);
 
-  // -------- Sudoku helpers (unchanged behavior)
-  function checkSolution() {
-    for (let r=0;r<9;r++) for (let c=0;c<9;c++) if (!sudokuGrid[r][c]) return false;
-    for (let r=0;r<9;r++) for (let c=0;c<9;c++) if (sudokuGrid[r][c] !== sudokuSolution[r][c]) return false;
-    return true;
-  }
-  function isValidSudokuMove(grid, row, col, num) {
-    for (let x=0;x<9;x++) if (x!==col && grid[row][x]===num) return false;
-    for (let x=0;x<9;x++) if (x!==row && grid[x][col]===num) return false;
-    const sr = Math.floor(row/3)*3, sc = Math.floor(col/3)*3;
-    for (let i=0;i<3;i++) for (let j=0;j<3;j++){
-      const rr=sr+i, cc=sc+j;
-      if ((rr!==row||cc!==col) && grid[rr][cc]===num) return false;
+  /* ============================================================
+   * Timer & stats (light)
+   * ============================================================ */
+  function startTimer() {
+    if (!gameInProgress) {
+      gameStartTime = Date.now();
+      gameInProgress = true;
+      timerInterval = setInterval(updateTimer, 1000);
     }
-    return true;
   }
-  function generatePuzzle(difficulty='Beginner'){
-    const cfg = {
-      'Beginner':{minClues:45,maxClues:50},
-      'Intermediate':{minClues:35,maxClues:44},
-      'Expert':{minClues:25,maxClues:34},
-      'Master':{minClues:17,maxClues:24}
-    }[difficulty];
-    const solution = generateValidCompleteSolution();
-    const puzzle = solution.map(r=>[...r]);
-    const target = cfg.minClues + Math.floor(Math.random()*(cfg.maxClues-cfg.minClues+1));
-    const remove = 81 - target;
-
-    const pos=[]; for(let r=0;r<9;r++)for(let c=0;c<9;c++)pos.push([r,c]);
-    for(let i=pos.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [pos[i],pos[j]]=[pos[j],pos[i]];}
-    for(let i=0;i<remove && i<pos.length;i++){const [r,c]=pos[i]; puzzle[r][c]=0;}
-
-    return { sudokuBoard:puzzle, sudokuSolution:solution };
+  function stopTimer() {
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = null;
+    gameInProgress = false;
   }
-  function convertToGrid(a){ const g=[]; for(let i=0;i<9;i++) g.push(a.slice(i*9,(i+1)*9).map(v=>v===null?0:v)); return g; }
-  function generateValidCompleteSolution(){
-    const base=[
-      [5,3,4,6,7,8,9,1,2],[6,7,2,1,9,5,3,4,8],[1,9,8,3,4,2,5,6,7],
-      [8,5,9,7,6,1,4,2,3],[4,2,6,8,5,3,7,9,1],[7,1,3,9,2,4,8,5,6],
-      [9,6,1,5,3,7,2,8,4],[2,8,7,4,1,9,6,3,5],[3,4,5,2,8,6,1,7,9]
-    ];
-    const s=base.map(r=>[...r]);
-    for(let b=0;b<3;b++){
-      if(Math.random()<0.5){const r1=b*3+Math.floor(Math.random()*3), r2=b*3+Math.floor(Math.random()*3); [s[r1],s[r2]]=[s[r2],s[r1]];}
-    }
-    return s;
+  function updateTimer() {
+    if (!gameStartTime) return;
+    gameTimer = Math.floor((Date.now() - gameStartTime) / 1000);
+    timerEl.textContent = formatTime(gameTimer);
   }
-  function startTimer(){ if(!gameInProgress){ gameStartTime=Date.now(); gameInProgress=true; timerInterval=setInterval(updateTimer,1000);} }
-  function stopTimer(){ if(timerInterval){clearInterval(timerInterval); timerInterval=null;} gameInProgress=false; }
-  function updateTimer(){ if(!gameStartTime) return; gameTimer=Math.floor((Date.now()-gameStartTime)/1000); const td=document.querySelector('.timer-display'); if(td) td.textContent=formatTime(gameTimer); }
-  const formatTime = s => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
-
-  function updateGameStats(diff, t){
-    gameStats.gamesPlayed++; gameStats.currentStreak++;
-    if(!gameStats.bestTimes[diff] || t<gameStats.bestTimes[diff]){
-      gameStats.bestTimes[diff]=t; showAchievement(`New ${diff} record: ${formatTime(t)}!`);
-    }
-    checkAchievements(); localStorage.setItem('sudokuStats', JSON.stringify(gameStats));
-  }
-  function checkAchievements(){
-    const A=[
-      {id:'first_win',name:'First Victory',condition:()=>gameStats.gamesPlayed===1},
-      {id:'speed_demon',name:'Speed Demon',condition:()=>gameStats.bestTimes.Expert && gameStats.bestTimes.Expert<300},
-      {id:'streak_5',name:'Hot Streak',condition:()=>gameStats.currentStreak>=5},
-      {id:'master_solver',name:'Master Solver',condition:()=>gameStats.bestTimes.Master}
-    ];
-    A.forEach(a=>{ if(!gameStats.achievements.includes(a.id) && a.condition()){ gameStats.achievements.push(a.id); showAchievement(`Achievement Unlocked: ${a.name}!`); }});
-  }
-  function showAchievement(msg){
-    const d=document.createElement('div'); d.className='achievement-toast'; d.textContent=msg; document.body.appendChild(d);
-    setTimeout(()=>d.classList.add('show'),100); setTimeout(()=>{d.classList.remove('show'); setTimeout(()=>d.remove(),300);},3000);
-  }
-  function showCelebration(t){
-    stopTimer();
-    const el=document.createElement('div'); el.className='celebration-overlay';
-    el.innerHTML=`<div class="celebration-content">
-      <div class="celebration-icon">🎉</div>
-      <h2>Puzzle Solved!</h2>
-      <p class="completion-time">Time: ${formatTime(t)}</p>
-      <p class="difficulty-label">Difficulty: ${currentDifficulty}</p>
-      <div class="celebration-stats">
-        <span>Games Played: ${gameStats.gamesPlayed}</span>
-        <span>Current Streak: ${gameStats.currentStreak}</span>
-      </div>
-      <p class="next-puzzle-text">Next puzzle loading...</p>
-    </div>`;
-    document.body.appendChild(el);
-    for(let i=0;i<50;i++){ const c=document.createElement('div'); c.className='confetti'; c.style.left=Math.random()*100+'%'; c.style.animationDelay=Math.random()*3+'s'; c.style.backgroundColor=`hsl(${Math.random()*360},70%,60%)`; document.body.appendChild(c); setTimeout(()=>c.remove(),3000); }
-    setTimeout(()=>el.remove(),3000);
+  function formatTime(s) {
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
   }
 
-  function startNewGame(difficulty=currentDifficulty){
-    stopTimer(); gameTimer=0; const td=document.querySelector('.timer-display'); if(td) td.textContent='00:00';
-    currentDifficulty=difficulty;
-    document.querySelectorAll('.difficulty-btn').forEach(b=>b.classList.toggle('active', b.dataset.difficulty===difficulty));
-    clearGame();
-    const puzzle=generatePuzzle(difficulty);
-    sudokuSolution=puzzle.sudokuSolution; sudokuGrid=puzzle.sudokuBoard.map(r=>[...r]);
-    loadGameWithData(puzzle);
-  }
-  function clearGame(){
-    editableCells.clear(); Object.keys(displayedNumbers).forEach(k=>delete displayedNumbers[k]);
-    numbersGroup.children.slice().forEach(ch=>{ numbersGroup.remove(ch); ch.traverse(n=>{ if(n.isMesh){n.geometry.dispose(); n.material.dispose();}}); });
-    notesGroup.children.slice().forEach(ch=>{ notesGroup.remove(ch); ch.traverse(n=>{ if(n.isMesh){n.geometry.dispose(); n.material.dispose();}}); });
-    cellsGroup.children.forEach(cell=>{
-      const parts=(cell.name||'').split('_'); const sg=parseInt(parts[1],10);
-      cell.traverse(ch=>{ if(ch.isMesh) ch.material.color.setHex(getBaseCellColorFor(sg,false)); });
-    });
-    selectedCell=null;
-  }
-  function getCellCoordinates(cellName){
-    const sg=parseInt(cellName.split('_')[1])-1, r=parseInt(cellName.split('_')[3])-1, c=parseInt(cellName.split('_')[4])-1;
-    const gr=Math.floor(sg/3)*3, gc=(sg%3)*3;
-    return { row:gr+r, col:gc+c, subGrid:sg+1 };
-  }
-  function getRelatedCells(cellName){
-    const coords=getCellCoordinates(cellName);
-    const related=new Set();
-    for(let c=0;c<9;c++){ const sg=Math.floor(coords.row/3)*3 + Math.floor(c/3) + 1; related.add(`Sub_${sg}_Cell_${(coords.row%3)+1}_${(c%3)+1}`); }
-    for(let r=0;r<9;r++){ const sg=Math.floor(r/3)*3 + Math.floor(coords.col/3) + 1; related.add(`Sub_${sg}_Cell_${(r%3)+1}_${(coords.col%3)+1}`); }
-    const rs=Math.floor(coords.row/3)*3, cs=Math.floor(coords.col/3)*3;
-    for(let r=0;r<3;r++) for(let c=0;c<3;c++){ const rr=rs+r, cc=cs+c; const sg=Math.floor(rr/3)*3+Math.floor(cc/3)+1; related.add(`Sub_${sg}_Cell_${(rr%3)+1}_${(cc%3)+1}`); }
-    return Array.from(related);
-  }
-  function highlightRelatedCells(cellName, on=true){
-    const list=getRelatedCells(cellName);
-    list.forEach(rc=>{
-      if(rc===cellName) return;
-      const sg=parseInt(rc.split('_')[1],10);
-      const isGiven=!!displayedNumbers[rc]?.isGiven;
-      colorCell(sg, rc, on ? COLORS.RELATED_CELL : getBaseCellColorFor(sg, isGiven));
-    });
-  }
-  function updateAutomaticNotes(cellName, n){
-    getRelatedCells(cellName).forEach(rc=>{
-      if(!editableCells.has(rc)) return;
-      const noteFile=`New_Number_${n}`, full=`${rc}_${noteFile}`, model=notesGroup.getObjectByName(full);
-      if(model){ notesGroup.remove(model); model.traverse(x=>{ if(x.isMesh){x.geometry.dispose(); x.material.dispose();} }); }
-    });
-  }
-  function eraseCell(cellName){
-    const cd=displayedNumbers[cellName]; if(!cd || cd.isGiven) return;
-    removeOldNumber(cellName);
-    const rm=[]; notesGroup.children.forEach(n=>{ if(n.name.startsWith(cellName)) rm.push(n); });
-    rm.forEach(n=>{ notesGroup.remove(n); n.traverse(x=>{ if(x.isMesh){x.geometry.dispose(); x.material.dispose();} }); });
-    const coords=getCellCoordinates(cellName); sudokuGrid[coords.row][coords.col]=null;
+  /* ============================================================
+   * Layout: make canvas size fit remaining space (iOS Safari safe)
+   * ============================================================ */
+  function applyLayout() {
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
+    const panelRect = panel.getBoundingClientRect();
+    const canvasW = isMobile ? window.innerWidth : Math.floor(window.innerWidth * 0.7);
+    const canvasH = isMobile ? Math.max(200, window.innerHeight - panelRect.height) : window.innerHeight;
+
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(canvasW, canvasH);
+
+    camera.aspect = canvasW / canvasH;
+    camera.updateProjectionMatrix();
+
+    // base scale — slightly smaller on mobile for comfortable fit
+    const baseScale = isMobile ? 4.8 : 5.0;
+    cellsGroup.scale.set(baseScale, baseScale, baseScale);
+    bordersGroup.scale.set(baseScale, baseScale, baseScale);
+    numbersGroup.scale.set(baseScale, baseScale, baseScale);
+    notesGroup.scale.set(baseScale, baseScale, baseScale);
+
+    if (typeof controls.handleResize === 'function') controls.handleResize();
   }
 
-  // Load assets then start
-  Promise.all([ fetch('partsList.json').then(r=>r.json()) ])
-  .then(([parts])=>{
+  applyLayout();
+  document.body.appendChild(renderer.domElement);
+
+  window.addEventListener('resize', applyLayout);
+
+  /* ============================================================
+   * Data loading (parts, borders, numbers)
+   * ============================================================ */
+  Promise.all([
+    fetch('partsList.json').then(r => r.json())
+  ]).then(([parts]) => {
     const { borders, cells } = parts;
 
-    borders.forEach(b=>{
-      loader.load(`assets/Borders/${b}.gltf`, gltf=>{
-        const part=gltf.scene; part.name=b; bordersGroup.add(part);
+    // Load borders
+    borders.forEach(border => {
+      loader.load(`assets/Borders/${border}.gltf`, (gltf) => {
+        const part = gltf.scene;
+        part.name = border;
+        bordersGroup.add(part);
       });
     });
 
-    cells.forEach(cell=>{
-      loader.load(`assets/Cells/${cell}.gltf`, gltf=>{
-        const part=gltf.scene; part.name=cell;
-        part.traverse(ch=>{
-          if(ch.isMesh){
-            const sg=parseInt(cell.split('_')[1],10);
-            ch.material = new THREE.MeshLambertMaterial({ color: getBaseCellColorFor(sg,false) });
+    // Load cells with base pastel material (we recolor on selection / given)
+    cells.forEach(cell => {
+      loader.load(`assets/Cells/${cell}.gltf`, (gltf) => {
+        const part = gltf.scene;
+        part.name = cell;
+        part.traverse((child) => {
+          if (child.isMesh) {
+            // default color depends on subgrid, not known yet here; set a neutral,
+            // we’ll recolor in setupSudokuMechanics and colorCell().
+            child.material = new THREE.MeshLambertMaterial({ color: 0xffffff });
           }
         });
         cellsGroup.add(part);
       });
     });
 
-    setTimeout(()=> startNewGame('Beginner'), 800);
-  })
-  .catch(err=>console.error('Error loading game data:', err));
+    // small delay then start game
+    setTimeout(() => startNewGame('Beginner'), 800);
+  }).catch(err => console.error('Error loading game data:', err));
 
-  function loadGameWithData(gameData){ setupSudokuMechanics(gameData.sudokuBoard); }
+  /* ============================================================
+   * Sudoku mechanics
+   * ============================================================ */
 
-  function setupSudokuMechanics(board){
-    board.forEach((row,r)=>{
-      row.forEach((val,c)=>{
-        const sg=Math.floor(r/3)*3 + Math.floor(c/3) + 1;
-        const name=`Sub_${sg}_Cell_${(r%3)+1}_${(c%3)+1}`;
-        const coord=`${(r%3)+1}_${(c%3)+1}`;
+  function getCellCoordinates(cellName) {
+    // cellName = Sub_{s}_Cell_{r}_{c}
+    const subGrid = parseInt(cellName.split('_')[1]) - 1;
+    const cellRow = parseInt(cellName.split('_')[3]) - 1;
+    const cellCol = parseInt(cellName.split('_')[4]) - 1;
 
-        if(val!==0){
-          const numFile=`Number_${val}`, path=`assets/Numbers/${sg}/Cell_${coord}/${numFile}.gltf`;
-          loader.load(path, gltf=>{
-            const part=gltf.scene; part.name=`${name}_${numFile}`;
-            part.traverse(ch=>{ if(ch.isMesh) ch.material=new THREE.MeshLambertMaterial({ color:getNumberColor(true)}); });
+    const gridRow = Math.floor(subGrid / 3) * 3;
+    const gridCol = (subGrid % 3) * 3;
+
+    return {
+      row: gridRow + cellRow,
+      col: gridCol + cellCol,
+      subGrid: subGrid + 1
+    };
+  }
+
+  function getRelatedCells(cellName) {
+    const coords = getCellCoordinates(cellName);
+    const related = new Set();
+
+    // same row
+    for (let c = 0; c < 9; c++) {
+      const s = Math.floor(coords.row / 3) * 3 + Math.floor(c / 3) + 1;
+      const n = `Sub_${s}_Cell_${(coords.row % 3) + 1}_${(c % 3) + 1}`;
+      related.add(n);
+    }
+    // same column
+    for (let r = 0; r < 9; r++) {
+      const s = Math.floor(r / 3) * 3 + Math.floor(coords.col / 3) + 1;
+      const n = `Sub_${s}_Cell_${(r % 3) + 1}_${(coords.col % 3) + 1}`;
+      related.add(n);
+    }
+    // same 3×3 box
+    const sr = Math.floor(coords.row / 3) * 3;
+    const sc = Math.floor(coords.col / 3) * 3;
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+      const rr = sr + i, cc = sc + j;
+      const s = Math.floor(rr / 3) * 3 + Math.floor(cc / 3) + 1;
+      const n = `Sub_${s}_Cell_${(rr % 3) + 1}_${(cc % 3) + 1}`;
+      related.add(n);
+    }
+    return Array.from(related);
+  }
+
+  function colorCell(subGrid, cellName, colorHex) {
+    const cell = cellsGroup.getObjectByName(cellName);
+    if (!cell) return;
+    cell.traverse((child) => {
+      if (child.isMesh) child.material.color.setHex(colorHex);
+    });
+  }
+
+  function highlightRelatedCells(cellName, on) {
+    const peers = getRelatedCells(cellName);
+    peers.forEach(n => {
+      if (n === cellName) return;
+      const info = displayedNumbers[n];
+      // Include given cells too (requested behavior)
+      const baseColor = getBaseCellColorFor(getCellCoordinates(n).subGrid, info?.isGiven);
+      colorCell(getCellCoordinates(n).subGrid, n, on ? COLORS.RELATED_CELL : baseColor);
+    });
+  }
+
+  function removeOldNumber(cellName) {
+    const info = displayedNumbers[cellName];
+    if (!info || info.isGiven) return;
+    if (info.modelName) {
+      const m = numbersGroup.getObjectByName(info.modelName);
+      if (m) {
+        numbersGroup.remove(m);
+        m.traverse((c) => { if (c.isMesh) { c.geometry.dispose(); c.material.dispose(); } });
+      }
+      info.number = null;
+      info.modelName = null;
+    }
+  }
+
+  function isValidSudokuMove(grid, row, col, num) {
+    for (let x = 0; x < 9; x++) if (x !== col && grid[row][x] === num) return false;
+    for (let x = 0; x < 9; x++) if (x !== row && grid[x][col] === num) return false;
+    const sr = Math.floor(row / 3) * 3;
+    const sc = Math.floor(col / 3) * 3;
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+      const rr = sr + i, cc = sc + j;
+      if ((rr !== row || cc !== col) && grid[rr][cc] === num) return false;
+    }
+    return true;
+  }
+
+  function checkSolution() {
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) if (!sudokuGrid[r][c]) return false;
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) if (sudokuGrid[r][c] !== sudokuSolution[r][c]) return false;
+    return true;
+  }
+
+  function generateValidCompleteSolution() {
+    // base solved grid, then randomize within bands a bit
+    const base = [
+      [5,3,4,6,7,8,9,1,2],[6,7,2,1,9,5,3,4,8],[1,9,8,3,4,2,5,6,7],
+      [8,5,9,7,6,1,4,2,3],[4,2,6,8,5,3,7,9,1],[7,1,3,9,2,4,8,5,6],
+      [9,6,1,5,3,7,2,8,4],[2,8,7,4,1,9,6,3,5],[3,4,5,2,8,6,1,7,9]
+    ].map(r => [...r]);
+
+    for (let b = 0; b < 3; b++) {
+      if (Math.random() < 0.5) {
+        const r1 = b * 3 + Math.floor(Math.random() * 3);
+        const r2 = b * 3 + Math.floor(Math.random() * 3);
+        [base[r1], base[r2]] = [base[r2], base[r1]];
+      }
+    }
+    return base;
+  }
+
+  function generatePuzzle(difficulty = 'Beginner') {
+    const settings = {
+      Beginner:     { minClues: 45, maxClues: 50 },
+      Intermediate: { minClues: 35, maxClues: 44 },
+      Expert:       { minClues: 25, maxClues: 34 },
+      Master:       { minClues: 17, maxClues: 24 }
+    }[difficulty];
+
+    const solution = generateValidCompleteSolution();
+    const puzzle = solution.map(r => [...r]);
+
+    const targetClues = settings.minClues + Math.floor(Math.random() * (settings.maxClues - settings.minClues + 1));
+    const cellsToRemove = 81 - targetClues;
+
+    const pos = [];
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) pos.push([r, c]);
+    for (let i = pos.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pos[i], pos[j]] = [pos[j], pos[i]];
+    }
+    for (let i = 0; i < cellsToRemove; i++) {
+      const [r, c] = pos[i];
+      puzzle[r][c] = 0;
+    }
+    return { sudokuBoard: puzzle, sudokuSolution: solution };
+  }
+
+  function clearGame() {
+    editableCells.clear();
+    Object.keys(displayedNumbers).forEach(k => delete displayedNumbers[k]);
+
+    // clear number meshes
+    numbersGroup.children.slice().forEach(ch => {
+      numbersGroup.remove(ch);
+      ch.traverse(n => { if (n.isMesh) { n.geometry.dispose(); n.material.dispose(); } });
+    });
+    // clear notes meshes
+    notesGroup.children.slice().forEach(ch => {
+      notesGroup.remove(ch);
+      ch.traverse(n => { if (n.isMesh) { n.geometry.dispose(); n.material.dispose(); } });
+    });
+
+    // reset cell colors back to their base pastel
+    cellsGroup.children.forEach(cell => {
+      const nm = cell.name;
+      if (!nm?.startsWith('Sub_')) return;
+      const sg = nm.split('_')[1];
+      colorCell(sg, nm, getBaseCellColorFor(sg, false));
+    });
+
+    selectedCell = null;
+  }
+
+  function startNewGame(diff = currentDifficulty) {
+    stopTimer();
+    gameTimer = 0;
+    timerEl.textContent = '00:00';
+    currentDifficulty = diff;
+
+    // active button
+    document.querySelectorAll('.difficulty-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.difficulty === diff);
+    });
+
+    clearGame();
+
+    const data = generatePuzzle(diff);
+    sudokuSolution = data.sudokuSolution;
+    sudokuGrid = data.sudokuBoard.map(row => [...row]);
+
+    loadGameWithData(data);
+  }
+
+  function loadGameWithData(data) {
+    const { sudokuBoard } = data;
+    fetch('partsList.json').then(r => r.json()).then(partsList => {
+      const { cells } = partsList;
+      setupSudokuMechanics(cells, sudokuBoard);
+    });
+  }
+
+  function setupSudokuMechanics(cells, board) {
+    board.forEach((row, r) => {
+      row.forEach((val, c) => {
+        const subGrid = Math.floor(r / 3) * 3 + Math.floor(c / 3) + 1;
+        const cellName = `Sub_${subGrid}_Cell_${(r % 3) + 1}_${(c % 3) + 1}`;
+        const cellCoords = `${(r % 3) + 1}_${(c % 3) + 1}`;
+        const isGiven = val !== 0;
+
+        // base cell color by subgrid + state
+        colorCell(subGrid, cellName, getBaseCellColorFor(subGrid, isGiven));
+
+        if (isGiven) {
+          const file = `Number_${val}`;
+          const p = `assets/Numbers/${subGrid}/Cell_${cellCoords}/${file}.gltf`;
+          loader.load(p, (gltf) => {
+            const part = gltf.scene;
+            part.name = `${cellName}_${file}`;
+            part.traverse((ch) => { if (ch.isMesh) ch.material = new THREE.MeshLambertMaterial({ color: getNumberColor(true) }); });
             numbersGroup.add(part);
           });
-          colorCell(sg, name, getBaseCellColorFor(sg,true));
-          displayedNumbers[name] = { number:val, modelName:`${name}_${numFile}`, isGiven:true };
+          displayedNumbers[cellName] = { number: val, modelName: `${cellName}_Number_${val}`, isGiven: true };
         } else {
-          editableCells.add(name);
-          colorCell(sg, name, getBaseCellColorFor(sg,false));
-          displayedNumbers[name] = { number:null, modelName:null, isGiven:false };
+          editableCells.add(cellName);
+          displayedNumbers[cellName] = { number: null, modelName: null, isGiven: false };
         }
       });
     });
   }
 
-  function colorCell(subGrid, cellName, color){
-    const obj=cellsGroup.getObjectByName(cellName);
-    if(!obj) return;
-    obj.traverse(ch=>{ if(ch.isMesh) ch.material.color.setHex(color); });
+  /* ============================================================
+   * Input: numbers / notes / erase
+   * ============================================================ */
+
+  function eraseCell(cellName) {
+    const info = displayedNumbers[cellName];
+    if (!info || info.isGiven) return;
+
+    removeOldNumber(cellName);
+
+    // remove all notes for that cell
+    const rm = [];
+    notesGroup.children.forEach(n => { if (n.name.startsWith(cellName + '_New_Number_')) rm.push(n); });
+    rm.forEach(n => {
+      notesGroup.remove(n);
+      n.traverse(ch => { if (ch.isMesh) { ch.geometry.dispose(); ch.material.dispose(); } });
+    });
+
+    const { row, col } = getCellCoordinates(cellName);
+    sudokuGrid[row][col] = null;
+
+    // reset base color
+    const sg = getCellCoordinates(cellName).subGrid;
+    colorCell(sg, cellName, getBaseCellColorFor(sg, false));
   }
 
-  function removeOldNumber(cellName){
-    const cd=displayedNumbers[cellName]; if(!cd || cd.isGiven) return;
-    if(cd.modelName){
-      const model=numbersGroup.getObjectByName(cd.modelName);
-      if(model){ numbersGroup.remove(model); model.traverse(ch=>{ if(ch.isMesh){ch.geometry.dispose(); ch.material.dispose();} }); }
-      cd.number=null; cd.modelName=null;
-    }
+  function updateAutomaticNotes(cellName, placedNumber) {
+    const peers = getRelatedCells(cellName);
+    peers.forEach(n => {
+      if (!editableCells.has(n)) return;
+      const noteFile = `New_Number_${placedNumber}`;
+      const full = `${n}_${noteFile}`;
+      const model = notesGroup.getObjectByName(full);
+      if (model) {
+        notesGroup.remove(model);
+        model.traverse((ch) => { if (ch.isMesh) { ch.geometry.dispose(); ch.material.dispose(); } });
+      }
+    });
   }
 
-  function inputNumber(number){
-    if(!selectedCell || !editableCells.has(selectedCell.cellName)) return;
+  function inputNumber(num) {
+    if (!selectedCell || !editableCells.has(selectedCell.cellName)) return;
     startTimer();
 
-    const cd=displayedNumbers[selectedCell.cellName];
-    if(!cd || cd.isGiven) return;
-
-    const { subGrid, cellName } = selectedCell;
+    const { cellName, subGrid } = selectedCell;
     const cellCoords = `${cellName.split('_')[3]}_${cellName.split('_')[4]}`;
+    const info = displayedNumbers[cellName];
+    if (!info || info.isGiven) return;
 
-    if(currentInputMode==="numbers"){
-      const v=getCellCoordinates(cellName);
-      if(!isValidSudokuMove(sudokuGrid, v.row, v.col, number)){
-        const x=document.createElement('div');
-        x.className='invalid-move-toast';
-        x.textContent='Invalid move! Number already exists in row, column, or box.';
-        x.style.cssText='position:fixed;top:20px;right:20px;background:linear-gradient(135deg,#ff6b6b,#ee5a52);color:#fff;padding:12px 20px;border-radius:8px;box-shadow:0 4px 12px rgba(255,107,107,.3);font-weight:500;z-index:1000;transform:translateX(100%);transition:transform .3s ease;';
-        document.body.appendChild(x);
-        setTimeout(()=>x.style.transform='translateX(0)',100);
-        setTimeout(()=>{x.style.transform='translateX(100%)'; setTimeout(()=>x.remove(),300);},2000);
+    if (currentInputMode === 'numbers') {
+      // validate
+      const { row, col } = getCellCoordinates(cellName);
+      if (!isValidSudokuMove(sudokuGrid, row, col, num)) {
+        toast('Invalid move! Number already exists in row, column, or box.');
         return;
       }
 
+      // remove prior number and notes
       removeOldNumber(cellName);
+      const rm = [];
+      notesGroup.children.forEach(n => { if (n.name.startsWith(cellName + '_New_Number_')) rm.push(n); });
+      rm.forEach(n => {
+        notesGroup.remove(n);
+        n.traverse((ch) => { if (ch.isMesh) { ch.geometry.dispose(); ch.material.dispose(); } });
+      });
 
-      // remove notes in that cell
-      const rm=[]; notesGroup.children.forEach(n=>{ if(n.name.startsWith(cellName)) rm.push(n); });
-      rm.forEach(n=>{ notesGroup.remove(n); n.traverse(ch=>{ if(ch.isMesh){ ch.geometry.dispose(); ch.material.dispose(); } }); });
-
-      const numFile=`Number_${number}`, path=`assets/Numbers/${subGrid}/Cell_${cellCoords}/${numFile}.gltf`;
-      loader.load(path, gltf=>{
-        const part=gltf.scene; part.name=`${cellName}_${numFile}`;
-        part.traverse(ch=>{ if(ch.isMesh) ch.material=new THREE.MeshLambertMaterial({ color:getNumberColor(false)}); });
+      const file = `Number_${num}`;
+      const p = `assets/Numbers/${subGrid}/Cell_${cellCoords}/${file}.gltf`;
+      loader.load(p, (gltf) => {
+        const part = gltf.scene;
+        part.name = `${cellName}_${file}`;
+        part.traverse((ch) => { if (ch.isMesh) ch.material = new THREE.MeshLambertMaterial({ color: getNumberColor(false) }); });
         numbersGroup.add(part);
       });
 
-      displayedNumbers[cellName]={ ...displayedNumbers[cellName], number, modelName:`${cellName}_${numFile}` };
+      displayedNumbers[cellName] = { ...displayedNumbers[cellName], number: num, modelName: `${cellName}_Number_${num}` };
+      sudokuGrid[row][col] = num;
 
-      const coords=getCellCoordinates(cellName);
-      sudokuGrid[coords.row][coords.col]=number;
+      updateAutomaticNotes(cellName, num);
 
-      updateAutomaticNotes(cellName, number);
-
-      if(checkSolution()){
-        const t=gameTimer; updateGameStats(currentDifficulty, t); showCelebration(t);
-        setTimeout(()=>startNewGame(currentDifficulty), 3000);
+      if (checkSolution()) {
+        stopTimer();
+        toast(`Solved in ${formatTime(gameTimer)}!`);
+        setTimeout(() => startNewGame(currentDifficulty), 1500);
       }
     } else {
       // notes mode
-      if(displayedNumbers[cellName].number!==null){
+      if (displayedNumbers[cellName].number !== null) {
         removeOldNumber(cellName);
-        const coords=getCellCoordinates(cellName);
-        sudokuGrid[coords.row][coords.col]=null;
+        const { row, col } = getCellCoordinates(cellName);
+        sudokuGrid[row][col] = null;
       }
 
-      const noteFile=`New_Number_${number}`;
-      const notePath=`assets/AdditionalNumbers/${subGrid}/Cell_${cellCoords}/${noteFile}.gltf`;
-      const full=`${cellName}_${noteFile}`;
+      const noteFile = `New_Number_${num}`;
+      const path = `assets/AdditionalNumbers/${subGrid}/Cell_${cellCoords}/${noteFile}.gltf`;
+      const full = `${cellName}_${noteFile}`;
 
-      if(notesGroup.getObjectByName(full)){
-        const m=notesGroup.getObjectByName(full);
-        notesGroup.remove(m);
-        m.traverse(ch=>{ if(ch.isMesh){ ch.geometry.dispose(); ch.material.dispose(); } });
+      const exists = notesGroup.getObjectByName(full);
+      if (exists) {
+        notesGroup.remove(exists);
+        exists.traverse((c) => { if (c.isMesh) { c.geometry.dispose(); c.material.dispose(); } });
       } else {
-        loader.load(notePath, gltf=>{
-          const part=gltf.scene; part.name=full;
-          part.traverse(ch=>{ if(ch.isMesh) ch.material=new THREE.MeshLambertMaterial({ color:getNumberColor(false)}); });
+        loader.load(path, (gltf) => {
+          const part = gltf.scene;
+          part.name = full;
+          part.traverse((ch) => { if (ch.isMesh) ch.material = new THREE.MeshLambertMaterial({ color: COLORS.PLAYER_NUMBER }); });
           notesGroup.add(part);
         });
       }
     }
   }
 
-  // -------- Picking / selection on the canvas
-  function onPointerEvent(event){
-    event.preventDefault();
-    const p=event.touches ? event.touches[0] : event;
-    const rect=renderer.domElement.getBoundingClientRect();
-    const mouse = new THREE.Vector2(
-      ((p.clientX-rect.left)/rect.width)*2 - 1,
-      -((p.clientY-rect.top)/rect.height)*2 + 1
-    );
-    const ray=new THREE.Raycaster();
-    ray.setFromCamera(mouse, camera);
-    const hits=ray.intersectObjects(cellsGroup.children, true);
-    if(!hits.length) return;
-
-    const cellName=hits[0].object.parent.name;
-    if(editableCells.has(cellName)){
-      if(selectedCell){
-        highlightRelatedCells(selectedCell.cellName, false);
-        const prevSg=parseInt(selectedCell.subGrid,10);
-        const prevGiven=!!displayedNumbers[selectedCell.cellName]?.isGiven;
-        colorCell(prevSg, selectedCell.cellName, getBaseCellColorFor(prevSg, prevGiven));
-      }
-      const subGrid=cellName.split('_')[1];
-      selectedCell={ subGrid, cellName };
-      colorCell(parseInt(subGrid,10), cellName, COLORS.SELECTED_CELL);
-      highlightRelatedCells(cellName, true);
-    }
+  function toast(msg) {
+    const t = document.createElement('div');
+    t.style.cssText = `
+      position: fixed; top: 20px; right: 20px; z-index: 2500;
+      background: linear-gradient(135deg,#ff6b6b,#ee5a52); color: #fff;
+      padding: 10px 14px; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.15);
+      transform: translateY(-12px); opacity: 0; transition: all .2s ease;
+      font-weight: 600; letter-spacing: .2px;`;
+    t.textContent = msg;
+    document.body.appendChild(t);
+    requestAnimationFrame(() => { t.style.transform = 'translateY(0)'; t.style.opacity = '1'; });
+    setTimeout(() => {
+      t.style.transform = 'translateY(-12px)'; t.style.opacity = '0';
+      setTimeout(() => t.remove(), 200);
+    }, 1500);
   }
+
+  /* ============================================================
+   * Selection via raycasting (click/touch on canvas)
+   * ============================================================ */
+  function onPointerEvent(event) {
+    event.preventDefault();
+    const p = event.touches ? event.touches[0] : event;
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    const mouse = new THREE.Vector2(
+      ((p.clientX - rect.left) / rect.width) * 2 - 1,
+      -((p.clientY - rect.top) / rect.height) * 2 + 1
+    );
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(cellsGroup.children, true);
+    if (hits.length === 0) return;
+
+    const obj = hits[0].object;
+    const cellName = obj?.parent?.name;
+    if (!cellName || !cellName.startsWith('Sub_')) return;
+
+    // un-highlight previous
+    if (selectedCell) {
+      highlightRelatedCells(selectedCell.cellName, false);
+      const base = getBaseCellColorFor(getCellCoordinates(selectedCell.cellName).subGrid, displayedNumbers[selectedCell.cellName]?.isGiven);
+      colorCell(selectedCell.subGrid, selectedCell.cellName, base);
+    }
+
+    selectedCell = { subGrid: cellName.split('_')[1], cellName };
+
+    // highlight new
+    colorCell(selectedCell.subGrid, selectedCell.cellName, COLORS.SELECTED_CELL);
+    highlightRelatedCells(selectedCell.cellName, true);
+  }
+
   renderer.domElement.addEventListener('click', onPointerEvent);
-  renderer.domElement.addEventListener('touchstart', onPointerEvent, { passive:false });
+  renderer.domElement.addEventListener('touchstart', onPointerEvent, { passive: false });
 
-  // -------- Misc input
-  document.addEventListener('touchmove', e=>{ if(e.touches.length===1) e.preventDefault(); }, { passive:false });
-  document.addEventListener('touchstart', e=>{ if(e.touches.length===1) e.preventDefault(); }, { passive:false });
-
-  window.addEventListener('keypress', (e)=>{ const k=e.key; if(selectedCell && k>='1' && k<='9') inputNumber(parseInt(k)); });
-
-  document.addEventListener('click', (e)=>{
-    const btn=e.target.closest('.difficulty-btn'); if(!btn) return;
-    startNewGame(btn.dataset.difficulty);
+  window.addEventListener('keypress', (e) => {
+    const k = e.key;
+    if (selectedCell && k >= '1' && k <= '9') inputNumber(parseInt(k, 10));
   });
 
-  // -------- Resize
-  window.addEventListener('resize', ()=>{
-    const newScale = window.innerWidth < 768 ? 6.5 : 5;
-    cellsGroup.scale.set(newScale, newScale, newScale);
-    bordersGroup.scale.set(newScale, newScale, newScale);
-    numbersGroup.scale.set(newScale, newScale, newScale);
-    notesGroup.scale.set(newScale, newScale, newScale);
+  /* ============================================================
+   * Trackpad → synthetic mouse drag to canvas center
+   * ============================================================ */
+  (function initTrackpad() {
+    let dragging = false;
+    let lastX = 0, lastY = 0;
 
-    camera.aspect = (window.innerWidth * 0.7) / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth * 0.7, window.innerHeight);
-    controls.handleResize();
-  });
+    function canvasCenter() {
+      const rect = renderer.domElement.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    }
+    function send(type, x, y) {
+      const ev = new MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true, cancelable: true });
+      renderer.domElement.dispatchEvent(ev);
+    }
 
-  // -------- Render loop
-  function animate(){ requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
+    function start(clientX, clientY) {
+      dragging = true;
+      lastX = clientX; lastY = clientY;
+      const c = canvasCenter();
+      send('mousedown', c.x, c.y);
+    }
+    function move(clientX, clientY) {
+      if (!dragging) return;
+      const dx = clientX - lastX;
+      const dy = clientY - lastY;
+      lastX = clientX; lastY = clientY;
+
+      const c = canvasCenter();
+      // amplify a bit so small finger/mouse moves feel good
+      send('mousemove', c.x + dx * 2, c.y + dy * 2);
+    }
+    function end() {
+      if (!dragging) return;
+      dragging = false;
+      const c = canvasCenter();
+      send('mouseup', c.x, c.y);
+    }
+
+    // Mouse
+    trackpadSurface.addEventListener('mousedown', (e) => { e.preventDefault(); start(e.clientX, e.clientY); });
+    window.addEventListener('mousemove', (e) => { if (dragging) { e.preventDefault(); move(e.clientX, e.clientY); } });
+    window.addEventListener('mouseup',   () => end());
+
+    // Touch
+    trackpadSurface.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0]; e.preventDefault(); start(t.clientX, t.clientY);
+    }, { passive: false });
+
+    trackpadSurface.addEventListener('touchmove', (e) => {
+      if (!dragging || e.touches.length !== 1) return;
+      const t = e.touches[0]; e.preventDefault(); move(t.clientX, t.clientY);
+    }, { passive: false });
+
+    trackpadSurface.addEventListener('touchend', (e) => { e.preventDefault(); end(); }, { passive: false });
+    trackpadSurface.addEventListener('touchcancel', () => end());
+  })();
+
+  /* ============================================================
+   * Animate
+   * ============================================================ */
+  function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+  }
   animate();
 });
