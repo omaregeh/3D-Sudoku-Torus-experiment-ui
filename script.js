@@ -1,6 +1,4 @@
-// BUILD v20 — Mouse keeps TrackballControls; trackpad rotates the torus (worldGroup).
-
-console.log("BUILD v20 — trackpad rotates torus (independent of mouse TrackballControls)");
+// BUILD v23 — Trackball mouse unchanged; trackpad emulates real canvas drags (orbit/pan)
 
 document.addEventListener('DOMContentLoaded', () => {
   let sudokuSolution = [];
@@ -30,10 +28,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // -------- Loader & Groups
   const loader = new THREE.GLTFLoader();
 
-  // worldGroup wraps the whole puzzle so we can rotate it with the trackpad
-  const worldGroup = new THREE.Group();
-  scene.add(worldGroup);
-
   const cellsGroup      = new THREE.Group();
   const bordersGroup    = new THREE.Group();
   const numbersGroup    = new THREE.Group();
@@ -47,7 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
   notesGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
   decorativeGroup.scale.set(scaleFactor * 0.3, scaleFactor * 0.3, scaleFactor * 0.3);
 
-  worldGroup.add(cellsGroup, bordersGroup, numbersGroup, notesGroup, decorativeGroup);
+  scene.add(cellsGroup, bordersGroup, numbersGroup, notesGroup, decorativeGroup);
 
   // -------- Colors & Pastels
   const COLORS = {
@@ -80,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
   controls.rotateSpeed = 5.0;
   controls.dynamicDampingFactor = 0.3;
   controls.noZoom = true;
-  controls.noPan  = true;
+  controls.noPan  = true;    // pan disabled for normal mouse left-drag
   controls.target.set(0, 0, 0);
   controls.update();
 
@@ -101,9 +95,12 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // -------- UI (right panel)
-  const controlPanel = document.createElement('div');
-  controlPanel.className = 'control-panel';
-  document.body.appendChild(controlPanel);
+  let controlPanel = document.querySelector('.control-panel');
+  if (!controlPanel) {
+    controlPanel = document.createElement('div');
+    controlPanel.className = 'control-panel';
+    document.body.appendChild(controlPanel);
+  }
 
   const topRow = document.createElement('div');
   topRow.className = 'top-row';
@@ -156,59 +153,167 @@ document.addEventListener('DOMContentLoaded', () => {
   eraseButton.addEventListener('touchstart', (e)=>{ e.preventDefault(); doErase(); }, { passive:false });
   utilityButtons.appendChild(eraseButton);
 
-  // -------- Trackpad that rotates the TORUS (worldGroup)
-  const trackpadWrap   = document.createElement('div');
-  trackpadWrap.className = 'trackpad-wrap';
-  controlPanel.appendChild(trackpadWrap);
+  // =========================
+  // CAD-style Trackpad (orbit + pan)
+  // =========================
+  function installCadTrackpad({ renderer, controls }) {
+    const panel = document.querySelector('.control-panel');
+    if (!panel) return;
 
-  const trackpadLabel  = document.createElement('div');
-  trackpadLabel.className = 'trackpad-label';
-  trackpadLabel.textContent = 'Trackpad';
-  trackpadWrap.appendChild(trackpadLabel);
+    // Create trackpad UI (or reuse if present)
+    let wrap = document.querySelector('.trackpad-wrap');
+    let surface, label;
 
-  const trackpadSurface = document.createElement('div');
-  trackpadSurface.className = 'trackpad-surface';
-  trackpadWrap.appendChild(trackpadSurface);
+    if (!wrap) {
+      wrap = document.createElement('div');
+      wrap.className = 'trackpad-wrap';
 
-  // Rotation math
-  const ROTATE_PER_PX = Math.PI / 600; // sensitivity. smaller = slower; larger = faster
-  let tpDragging = false;
-  let tpPrevX = 0, tpPrevY = 0;
-  const _q = new THREE.Quaternion();
-  const _axisY = new THREE.Vector3(0, 1, 0); // yaw
-  const _axisX = new THREE.Vector3(1, 0, 0); // pitch
+      surface = document.createElement('div');
+      surface.className = 'trackpad-surface';
 
-  trackpadSurface.addEventListener('pointerdown', (e) => {
-    trackpadSurface.setPointerCapture(e.pointerId);
-    tpDragging = true;
-    tpPrevX = e.clientX;
-    tpPrevY = e.clientY;
-  });
-  trackpadSurface.addEventListener('pointermove', (e) => {
-    if (!tpDragging) return;
-    const dx = e.clientX - tpPrevX;
-    const dy = e.clientY - tpPrevY;
-    tpPrevX = e.clientX;
-    tpPrevY = e.clientY;
+      label = document.createElement('div');
+      label.className = 'trackpad-label';
+      label.textContent = 'Trackpad';
 
-    // Yaw (left/right): around world Y
-    _q.setFromAxisAngle(_axisY, -dx * ROTATE_PER_PX);
-    worldGroup.quaternion.premultiply(_q);
+      wrap.appendChild(surface);
+      wrap.appendChild(label);
+      panel.appendChild(wrap);
+    } else {
+      surface = wrap.querySelector('.trackpad-surface') || (() => {
+        const el = document.createElement('div');
+        el.className = 'trackpad-surface';
+        wrap.appendChild(el);
+        return el;
+      })();
+      label = wrap.querySelector('.trackpad-label') || (() => {
+        const el = document.createElement('div');
+        el.className = 'trackpad-label';
+        el.textContent = 'Trackpad';
+        wrap.appendChild(el);
+        return el;
+      })();
+    }
 
-    // Pitch (up/down): around world X
-    _q.setFromAxisAngle(_axisX, -dy * ROTATE_PER_PX);
-    worldGroup.quaternion.premultiply(_q);
-  });
-  function tpEnd(e){
-    if (!tpDragging) return;
-    try { trackpadSurface.releasePointerCapture(e.pointerId); } catch {}
-    tpDragging = false;
+    // Shield over the canvas during pad drags (prevents cell picks)
+    const canvas = renderer.domElement;
+    const shield = document.createElement('div');
+    Object.assign(shield.style, {
+      position: 'fixed',
+      left: '0', top: '0', right: '0', bottom: '0',
+      pointerEvents: 'none',
+      zIndex: '999',
+      cursor: 'grabbing'
+    });
+    document.body.appendChild(shield);
+
+    // Helpers to synthesize canvas mouse events at canvas center
+    function canvasCenter() {
+      const r = canvas.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }
+    function sendMouse(type, x, y, button, buttons) {
+      const e = new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: x,
+        clientY: y,
+        button,
+        buttons
+      });
+      canvas.dispatchEvent(e);
+    }
+
+    // State
+    let dragging = false;
+    let activeButton = 0;        // 0 = left/orbit, 2 = right/pan
+    let lastX = 0, lastY = 0;
+    let accX = 0, accY = 0;      // accumulated offset from canvas center
+    const ROTATE_SENS = 1.0;     // tune 0.7–1.3 to taste
+    const defaultNoPan = controls.noPan;
+
+    function beginDrag(buttonKind) {
+      if (dragging) return;
+      dragging = true;
+      activeButton = buttonKind;
+      accX = 0; accY = 0;
+
+      if (activeButton === 2) controls.noPan = false;  // allow pan during right/two-finger drag
+
+      const { x, y } = canvasCenter();
+      lastX = x; lastY = y;
+
+      shield.style.pointerEvents = 'auto'; // block picking
+      sendMouse('mousedown', x, y, activeButton, activeButton === 2 ? 2 : 1);
+    }
+    function moveDrag(dx, dy) {
+      if (!dragging) return;
+      accX += dx * ROTATE_SENS;
+      accY += dy * ROTATE_SENS;
+
+      const { x: cx, y: cy } = canvasCenter();
+      sendMouse('mousemove', cx + accX, cy + accY, activeButton, activeButton === 2 ? 2 : 1);
+    }
+    function endDrag() {
+      if (!dragging) return;
+      const { x, y } = canvasCenter();
+      sendMouse('mouseup', x, y, activeButton, 0);
+      shield.style.pointerEvents = 'none';
+      dragging = false;
+      controls.noPan = defaultNoPan;
+    }
+
+    // Mouse on the trackpad
+    surface.addEventListener('contextmenu', (e) => e.preventDefault());
+    surface.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      // left = orbit, right = pan; Shift+left also pans (handy on laptop trackpads)
+      const button = (e.button === 2 || e.shiftKey) ? 2 : 0;
+      beginDrag(button);
+      lastX = e.clientX; lastY = e.clientY;
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      moveDrag(dx, dy);
+    });
+    window.addEventListener('mouseup', endDrag);
+
+    // Touch: 1 finger = orbit, 2+ fingers = pan
+    surface.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const btn = (e.touches.length >= 2) ? 2 : 0;
+      const t = e.touches[0];
+      beginDrag(btn);
+      lastX = t.clientX; lastY = t.clientY;
+    }, { passive: false });
+
+    surface.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (!dragging) return;
+      const t = e.touches[0];
+      const dx = t.clientX - lastX;
+      const dy = t.clientY - lastY;
+      lastX = t.clientX; lastY = t.clientY;
+      moveDrag(dx, dy);
+    }, { passive: false });
+
+    surface.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      endDrag();
+    }, { passive: false });
+
+    window.addEventListener('blur', endDrag);
+
+    console.log('CAD-style trackpad ready: orbit = left-drag, pan = right-drag / two fingers.');
   }
-  trackpadSurface.addEventListener('pointerup', tpEnd);
-  trackpadSurface.addEventListener('pointercancel', tpEnd);
-  trackpadSurface.addEventListener('lostpointercapture', tpEnd);
 
-  // -------- Sudoku helpers (unchanged behavior)
+  // Install the CAD-style trackpad
+  installCadTrackpad({ renderer, controls });
+
+  // -------- Sudoku helpers
   function checkSolution() {
     for (let r=0;r<9;r++) for (let c=0;c<9;c++) if (!sudokuGrid[r][c]) return false;
     for (let r=0;r<9;r++) for (let c=0;c<9;c++) if (sudokuGrid[r][c] !== sudokuSolution[r][c]) return false;
