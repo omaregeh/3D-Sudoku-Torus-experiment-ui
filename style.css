@@ -131,25 +131,26 @@ body {
 }
 
 /* ——— Trackpad ——— */
-/* Put the gradient/background on the wrapper... */
+/* Bigger trackpad + equal spacing above/below (triple the old 16px gap -> 48px) */
 .trackpad-wrap {
   position: relative;
-  margin-top: 16px;
-  height: 220px;
+  margin-top: 48px;       /* tripled gap above (was 16px) */
+  margin-bottom: 48px;    /* same gap below */
+  height: 340px;          /* larger trackpad (was 220px) */
   border-radius: 16px;
   border: 2px solid #e5e7eb;
   background: linear-gradient(180deg, #fafafa, #f3f4f6);
   box-shadow: 0 4px 12px rgba(0,0,0,0.06);
 }
-/* ...and keep the interactive surface transparent so the label shows. */
+/* interactive surface stays transparent so label shows; captures input */
 .trackpad-surface {
   position: absolute;
   inset: 0;
   border-radius: 16px;
-  background: transparent;      /* <— key change */
+  background: transparent;
   cursor: grab;
   touch-action: none;
-  z-index: 2;                   /* above label to capture events */
+  z-index: 2; /* above label to capture events */
 }
 .trackpad-surface:active { cursor: grabbing; }
 
@@ -162,8 +163,8 @@ body {
   color: #111827;
   opacity: 0.6;
   user-select: none;
-  pointer-events: none;         /* not selectable/clickable */
-  z-index: 1;                   /* below the surface */
+  pointer-events: none; /* not selectable/clickable */
+  z-index: 1;           /* below the surface */
 }
 
 /* ——— Win/achievement UI ——— */
@@ -208,5 +209,6 @@ body {
   .utility-buttons { flex-direction: row; }
   .utility-buttons button { flex: 1; padding: 10px; font-size: 14px; }
 
-  .trackpad-wrap { height: 180px; }
+  /* slightly smaller trackpad for mobile */
+  .trackpad-wrap { height: 220px; margin-top: 32px; margin-bottom: 32px; }
 }
