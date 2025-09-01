@@ -1,12 +1,19 @@
-// BUILD v15 — pointer-based trackpad (no recursion), gray peer highlight incl. givens,
-// pastel 3×3 colors, givens in red, no header/fab/ball.
+// BUILD v18 — trackpad rotates camera directly + shield overlay + center dot,
+// gray peer highlight (incl. givens), pastel subgrid colors, givens in red.
+
+console.log("BUILD v18 — trackpad camera rotate (shield)");
 
 document.addEventListener('DOMContentLoaded', () => {
   let sudokuSolution = [];
 
   // ===== Scene / camera / renderer =====
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(35, (window.innerWidth * 0.7) / window.innerHeight, 0.01, 100);
+  const camera = new THREE.PerspectiveCamera(
+    35,
+    (window.innerWidth * 0.7) / window.innerHeight,
+    0.01,
+    100
+  );
   camera.position.set(0, 3, 1.5);
   camera.lookAt(0, 0, 0);
   camera.updateProjectionMatrix();
@@ -42,10 +49,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // ===== Colors =====
   const COLORS = {
     DEFAULT_CELL: 0xFFFFFF,
-    SELECTED_CELL: 0xFF8C00, // orange
-    RELATED_CELL: 0x9CA3AF,  // darker gray peers highlight
-    GIVEN_NUMBER: 0x8B0000,  // red
-    PLAYER_NUMBER: 0x000000, // black
+    SELECTED_CELL: 0xFF8C00,  // orange
+    RELATED_CELL: 0x9CA3AF,   // darker gray peers highlight
+    GIVEN_NUMBER: 0x8B0000,   // red
+    PLAYER_NUMBER: 0x000000,  // black
     GIVEN_CELL: 0xD3D3D3
   };
   const getNumberColor = (isGiven) => (isGiven ? COLORS.GIVEN_NUMBER : COLORS.PLAYER_NUMBER);
@@ -67,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return s ? (isGiven ? s.givenCell : s.cell) : (isGiven ? COLORS.GIVEN_CELL : COLORS.DEFAULT_CELL);
   }
 
-  // ===== Controls =====
+  // ===== Controls (mouse on canvas still works) =====
   const controls = new THREE.TrackballControls(camera, renderer.domElement);
   controls.rotateSpeed = 5.0;
   controls.dynamicDampingFactor = 0.3;
@@ -154,74 +161,99 @@ document.addEventListener('DOMContentLoaded', () => {
   eraseButton.addEventListener('touchstart', (e)=>{ e.preventDefault(); doErase(); }, { passive:false });
   utilityButtons.appendChild(eraseButton);
 
-  // ===== Trackpad (under Erase) — pointer events, no recursion =====
+  // ===== Trackpad (under Erase) — rotates camera directly =====
   const trackpadWrap = document.createElement('div');
   trackpadWrap.className = 'trackpad-wrap';
   controlPanel.appendChild(trackpadWrap);
 
-  // label (under surface)
+  // label (non-interactive)
   const trackpadLabel = document.createElement('div');
   trackpadLabel.className = 'trackpad-label';
   trackpadLabel.textContent = 'Trackpad';
   trackpadWrap.appendChild(trackpadLabel);
 
-  // interactive transparent surface
+  // interactive surface (transparent)
   const trackpadSurface = document.createElement('div');
   trackpadSurface.className = 'trackpad-surface';
   trackpadWrap.appendChild(trackpadSurface);
 
-  // helper to send synthetic mouse events to TrackballControls
-  function sendSynthetic(type, dx, dy) {
-    const rect = renderer.domElement.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const ev = new MouseEvent(type, {
-      clientX: cx + dx,
-      clientY: cy + dy,
-      button: 0,
-      buttons: type === 'mouseup' ? 0 : 1,
-      bubbles: true,
-      cancelable: true
-    });
-    if (type === 'mousedown') {
-      renderer.domElement.dispatchEvent(ev); // TrackballControls sets state here
-    } else {
-      document.dispatchEvent(ev); // TrackballControls listens on document while dragging
-    }
-  }
+  // Trackpad logic: rotate camera using spherical coordinates around controls.target
+  const spherical = new THREE.Spherical();
+  const ROTATION_SPEED = 0.005 * 2; // sensitivity
+  const EPS = 0.0001;
 
   let tpDragging = false;
   let tpLastX = 0, tpLastY = 0;
-  let tpCumX = 0, tpCumY = 0;
+  let shieldEl = null;
+  let cursorDot = null;
 
-  trackpadSurface.addEventListener('pointerdown', (e) => {
+  function showShield() {
+    // overlay that blocks clicks on canvas while dragging
+    const r = renderer.domElement.getBoundingClientRect();
+    shieldEl = document.createElement('div');
+    shieldEl.style.cssText = `
+      position: fixed; left:${r.left}px; top:${r.top}px; width:${r.width}px; height:${r.height}px;
+      pointer-events: auto; z-index: 999; background: transparent;
+    `;
+    // center dot for user feedback
+    cursorDot = document.createElement('div');
+    cursorDot.style.cssText = `
+      position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+      width: 14px; height: 14px; border-radius: 50%;
+      background: rgba(0,0,0,0.35); box-shadow: 0 0 0 3px rgba(255,255,255,0.85) inset;
+      pointer-events: none;
+    `;
+    shieldEl.appendChild(cursorDot);
+    document.body.appendChild(shieldEl);
+  }
+  function hideShield() {
+    if (shieldEl && shieldEl.parentNode) shieldEl.parentNode.removeChild(shieldEl);
+    shieldEl = null; cursorDot = null;
+  }
+
+  function beginTrackpadDrag(e) {
     e.preventDefault();
     trackpadSurface.setPointerCapture(e.pointerId);
     tpDragging = true;
     tpLastX = e.clientX;
     tpLastY = e.clientY;
-    tpCumX = 0;
-    tpCumY = 0;
-    sendSynthetic('mousedown', 0, 0);
-  });
-  trackpadSurface.addEventListener('pointermove', (e) => {
+
+    // get spherical from current camera
+    const offset = camera.position.clone().sub(controls.target);
+    spherical.setFromVector3(offset);
+
+    showShield();
+  }
+  function moveTrackpad(e) {
     if (!tpDragging) return;
     e.preventDefault();
-    const dx = (e.clientX - tpLastX) * 2; // sensitivity
-    const dy = (e.clientY - tpLastY) * 2;
-    tpCumX += dx;
-    tpCumY += dy;
+    const dx = e.clientX - tpLastX;
+    const dy = e.clientY - tpLastY;
     tpLastX = e.clientX;
     tpLastY = e.clientY;
-    sendSynthetic('mousemove', tpCumX, tpCumY);
-  });
+
+    // update spherical
+    spherical.theta -= dx * ROTATION_SPEED; // yaw
+    spherical.phi   -= dy * ROTATION_SPEED; // pitch
+    // clamp to avoid flipping
+    spherical.phi = Math.max(EPS, Math.min(Math.PI - EPS, spherical.phi));
+
+    // apply back to camera
+    const offset = new THREE.Vector3().setFromSpherical(spherical);
+    camera.position.copy(controls.target).add(offset);
+    camera.lookAt(controls.target);
+    controls.update();
+  }
   function endTrackpadDrag(e) {
     if (!tpDragging) return;
     e.preventDefault();
     tpDragging = false;
-    try { trackpadSurface.releasePointerCapture(e.pointerId); } catch (_) {}
-    sendSynthetic('mouseup', tpCumX, tpCumY);
+    try { trackpadSurface.releasePointerCapture(e.pointerId); } catch(_) {}
+    hideShield();
   }
+
+  trackpadSurface.addEventListener('pointerdown', beginTrackpadDrag);
+  trackpadSurface.addEventListener('pointermove', moveTrackpad);
   trackpadSurface.addEventListener('pointerup', endTrackpadDrag);
   trackpadSurface.addEventListener('pointercancel', endTrackpadDrag);
 
@@ -300,7 +332,13 @@ document.addEventListener('DOMContentLoaded', () => {
       timerInterval = setInterval(updateTimer, 1000);
     }
   }
-  function stopTimer() { if (timerInterval) { clearInterval(timerInterval); timerInterval = null; } gameInProgress = false; }
+  function stopTimer() {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+    gameInProgress = false;
+  }
   function updateTimer() {
     if (gameStartTime) {
       gameTimer = Math.floor((Date.now() - gameStartTime) / 1000);
@@ -308,7 +346,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (el) el.textContent = formatTime(gameTimer);
     }
   }
-  function formatTime(s) { const m = Math.floor(s / 60), sec = s % 60; return `${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`; }
+  function formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
 
   function updateGameStats(difficulty, completionTime) {
     gameStats.gamesPlayed++;
@@ -320,6 +362,7 @@ document.addEventListener('DOMContentLoaded', () => {
     checkAchievements();
     localStorage.setItem('sudokuStats', JSON.stringify(gameStats));
   }
+
   function checkAchievements() {
     const achievements = [
       { id: 'first_win', name: 'First Victory', condition: () => gameStats.gamesPlayed === 1 },
@@ -327,27 +370,35 @@ document.addEventListener('DOMContentLoaded', () => {
       { id: 'streak_5', name: 'Hot Streak', condition: () => gameStats.currentStreak >= 5 },
       { id: 'master_solver', name: 'Master Solver', condition: () => gameStats.bestTimes.Master }
     ];
-    achievements.forEach(a => {
-      if (!gameStats.achievements.includes(a.id) && a.condition()) {
-        gameStats.achievements.push(a.id);
-        showAchievement(`Achievement Unlocked: ${a.name}!`);
+    achievements.forEach(achievement => {
+      if (!gameStats.achievements.includes(achievement.id) && achievement.condition()) {
+        gameStats.achievements.push(achievement.id);
+        showAchievement(`Achievement Unlocked: ${achievement.name}!`);
       }
     });
   }
+
   function showAchievement(message) {
-    const el = document.createElement('div');
-    el.className = 'achievement-toast';
-    el.textContent = message;
-    document.body.appendChild(el);
-    setTimeout(() => el.classList.add('show'), 100);
-    setTimeout(() => { el.classList.remove('show'); setTimeout(() => { if (document.body.contains(el)) document.body.removeChild(el); }, 300); }, 3000);
+    const achievement = document.createElement('div');
+    achievement.className = 'achievement-toast';
+    achievement.textContent = message;
+    document.body.appendChild(achievement);
+
+    setTimeout(() => achievement.classList.add('show'), 100);
+    setTimeout(() => {
+      achievement.classList.remove('show');
+      setTimeout(() => {
+        if (document.body.contains(achievement)) document.body.removeChild(achievement);
+      }, 300);
+    }, 3000);
   }
 
   function showCelebration(completionTime) {
     stopTimer();
-    const overlay = document.createElement('div');
-    overlay.className = 'celebration-overlay';
-    overlay.innerHTML = `
+
+    const celebration = document.createElement('div');
+    celebration.className = 'celebration-overlay';
+    celebration.innerHTML = `
       <div class="celebration-content">
         <div class="celebration-icon">🎉</div>
         <h2>Puzzle Solved!</h2>
@@ -360,10 +411,15 @@ document.addEventListener('DOMContentLoaded', () => {
         <p class="next-puzzle-text">Next puzzle loading...</p>
       </div>
     `;
-    document.body.appendChild(overlay);
+    document.body.appendChild(celebration);
+
     createConfetti();
-    setTimeout(() => { if (document.body.contains(overlay)) document.body.removeChild(overlay); }, 3000);
+
+    setTimeout(() => {
+      if (document.body.contains(celebration)) document.body.removeChild(celebration);
+    }, 3000);
   }
+
   function createConfetti() {
     for (let i = 0; i < 50; i++) {
       const confetti = document.createElement('div');
@@ -372,17 +428,21 @@ document.addEventListener('DOMContentLoaded', () => {
       confetti.style.animationDelay = Math.random() * 3 + 's';
       confetti.style.backgroundColor = `hsl(${Math.random() * 360}, 70%, 60%)`;
       document.body.appendChild(confetti);
-      setTimeout(() => { if (document.body.contains(confetti)) document.body.removeChild(confetti); }, 3000);
+
+      setTimeout(() => {
+        if (document.body.contains(confetti)) document.body.removeChild(confetti);
+      }, 3000);
     }
   }
 
   function startNewGame(difficulty = currentDifficulty) {
     stopTimer();
     gameTimer = 0;
-    const el = document.querySelector('.timer-display');
-    if (el) el.textContent = '00:00';
+    const t = document.querySelector('.timer-display');
+    if (t) t.textContent = '00:00';
 
     currentDifficulty = difficulty;
+
     document.querySelectorAll('.difficulty-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.difficulty === difficulty);
     });
@@ -392,6 +452,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const puzzleData = generatePuzzle(difficulty);
     sudokuSolution = puzzleData.sudokuSolution;
     sudokuGrid = puzzleData.sudokuBoard.map(row => [...row]);
+
     loadGameWithData(puzzleData);
   }
 
@@ -401,11 +462,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     numbersGroup.children.slice().forEach(child => {
       numbersGroup.remove(child);
-      child.traverse((node) => { if (node.isMesh) { node.geometry.dispose(); node.material.dispose(); } });
+      child.traverse((node) => {
+        if (node.isMesh) {
+          node.geometry.dispose();
+          node.material.dispose();
+        }
+      });
     });
+
     notesGroup.children.slice().forEach(child => {
       notesGroup.remove(child);
-      child.traverse((node) => { if (node.isMesh) { node.geometry.dispose(); node.material.dispose(); } });
+      child.traverse((node) => {
+        if (node.isMesh) {
+          node.geometry.dispose();
+          node.material.dispose();
+        }
+      });
     });
 
     cellsGroup.children.forEach(cell => {
@@ -413,7 +485,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const parts = name.split('_'); // "Sub_5_Cell_2_3"
       const subgrid = parseInt(parts[1], 10);
       const baseColor = getBaseCellColorFor(subgrid, false);
-      cell.traverse(child => { if (child.isMesh) child.material.color.setHex(baseColor); });
+      cell.traverse(child => {
+        if (child.isMesh) child.material.color.setHex(baseColor);
+      });
     });
 
     selectedCell = null;
@@ -423,29 +497,46 @@ document.addEventListener('DOMContentLoaded', () => {
     const subGrid = parseInt(cellName.split('_')[1]) - 1;
     const cellRow = parseInt(cellName.split('_')[3]) - 1;
     const cellCol = parseInt(cellName.split('_')[4]) - 1;
+
     const gridRow = Math.floor(subGrid / 3) * 3;
     const gridCol = (subGrid % 3) * 3;
-    return { row: gridRow + cellRow, col: gridCol + cellCol, subGrid: subGrid + 1 };
+
+    return {
+      row: gridRow + cellRow,
+      col: gridCol + cellCol,
+      subGrid: subGrid + 1
+    };
   }
 
   function getRelatedCells(cellName) {
     const coords = getCellCoordinates(cellName);
     const related = new Set();
 
+    // same row
     for (let col = 0; col < 9; col++) {
       const subGrid = Math.floor(coords.row / 3) * 3 + Math.floor(col / 3) + 1;
-      related.add(`Sub_${subGrid}_Cell_${(coords.row % 3) + 1}_${(col % 3) + 1}`);
+      const cellInRow = `Sub_${subGrid}_Cell_${(coords.row % 3) + 1}_${(col % 3) + 1}`;
+      related.add(cellInRow);
     }
+
+    // same column
     for (let row = 0; row < 9; row++) {
       const subGrid = Math.floor(row / 3) * 3 + Math.floor(coords.col / 3) + 1;
-      related.add(`Sub_${subGrid}_Cell_${(row % 3) + 1}_${(coords.col % 3) + 1}`);
+      const cellInCol = `Sub_${subGrid}_Cell_${(row % 3) + 1}_${(coords.col % 3) + 1}`;
+      related.add(cellInCol);
     }
-    const sr = Math.floor(coords.row / 3) * 3;
-    const sc = Math.floor(coords.col / 3) * 3;
-    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
-      const row = sr + r, col = sc + c;
-      const subGrid = Math.floor(row / 3) * 3 + Math.floor(col / 3) + 1;
-      related.add(`Sub_${subGrid}_Cell_${(row % 3) + 1}_${(col % 3) + 1}`);
+
+    // same 3x3
+    const squareStartRow = Math.floor(coords.row / 3) * 3;
+    const squareStartCol = Math.floor(coords.col / 3) * 3;
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) {
+        const row = squareStartRow + r;
+        const col = squareStartCol + c;
+        const subGrid = Math.floor(row / 3) * 3 + Math.floor(col / 3) + 1;
+        const cellInSquare = `Sub_${subGrid}_Cell_${(row % 3) + 1}_${(col % 3) + 1}`;
+        related.add(cellInSquare);
+      }
     }
     return Array.from(related);
   }
@@ -471,7 +562,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const model = notesGroup.getObjectByName(fullNoteName);
         if (model) {
           notesGroup.remove(model);
-          model.traverse((child) => { if (child.isMesh) { child.geometry.dispose(); child.material.dispose(); } });
+          model.traverse((child) => {
+            if (child.isMesh) {
+              child.geometry.dispose();
+              child.material.dispose();
+            }
+          });
         }
       }
     });
@@ -481,34 +577,48 @@ document.addEventListener('DOMContentLoaded', () => {
     const cellData = displayedNumbers[cellName];
     if (!cellData || cellData.isGiven) return;
 
+    // Remove regular number
     removeOldNumber(cellName);
 
+    // Remove all additional numbers in the cell
     const notesToRemove = [];
-    notesGroup.children.forEach(note => { if (note.name.startsWith(cellName)) notesToRemove.push(note); });
+    notesGroup.children.forEach(note => {
+      if (note.name.startsWith(cellName)) notesToRemove.push(note);
+    });
     notesToRemove.forEach(note => {
       notesGroup.remove(note);
-      note.traverse((child) => { if (child.isMesh) { child.geometry.dispose(); child.material.dispose(); } });
+      note.traverse((child) => {
+        if (child.isMesh) {
+          child.geometry.dispose();
+          child.material.dispose();
+        }
+      });
     });
 
+    // Update game state
     const coords = getCellCoordinates(cellName);
     sudokuGrid[coords.row][coords.col] = null;
   }
 
-  // ===== Load parts and start =====
-  Promise.all([ fetch('partsList.json').then(r => r.json()) ])
+  // ===== Load assets and start game =====
+  Promise.all([ fetch('partsList.json').then(response => response.json()) ])
     .then(([partsListData]) => {
       const { borders, cells } = partsListData;
 
+      // Load borders
       borders.forEach(border => {
         loader.load(`assets/Borders/${border}.gltf`, (gltf) => {
-          const part = gltf.scene; part.name = border; bordersGroup.add(part);
+          const part = gltf.scene;
+          part.name = border;
+          bordersGroup.add(part);
         });
       });
 
-      // Base pastel for each cell by its subgrid
+      // Load cells with base pastel per subgrid
       cells.forEach(cell => {
         loader.load(`assets/Cells/${cell}.gltf`, (gltf) => {
-          const part = gltf.scene; part.name = cell;
+          const part = gltf.scene;
+          part.name = cell;
           part.traverse((child) => {
             if (child.isMesh) {
               const subgrid = parseInt(cell.split('_')[1], 10);
@@ -526,7 +636,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function loadGameWithData(gameData) {
     const { sudokuBoard } = gameData;
-    fetch('partsList.json').then(r => r.json()).then(() => {
+    fetch('partsList.json').then(response => response.json()).then(() => {
       setupSudokuMechanics(sudokuBoard);
     });
   }
@@ -542,22 +652,32 @@ document.addEventListener('DOMContentLoaded', () => {
           // GIVEN: darker pastel + red number
           const numberFile = `Number_${cell}`;
           const numberPath = `assets/Numbers/${subGrid}/Cell_${cellCoords}/${numberFile}.gltf`;
+
           loader.load(numberPath, (gltf) => {
             const part = gltf.scene;
             part.name = `${cellName}_${numberFile}`;
             part.traverse((child) => {
-              if (child.isMesh) child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(true) });
+              if (child.isMesh) {
+                child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(true) });
+              }
             });
             numbersGroup.add(part);
           });
 
           colorCell(subGrid, cellName, getBaseCellColorFor(subGrid, true));
-          displayedNumbers[cellName] = { number: cell, modelName: `${cellName}_${numberFile}`, isGiven: true };
+          displayedNumbers[cellName] = {
+            number: cell,
+            modelName: `${cellName}_${numberFile}`,
+            isGiven: true
+          };
         } else {
-          // EDITABLE: lighter pastel
           editableCells.add(cellName);
           colorCell(subGrid, cellName, getBaseCellColorFor(subGrid, false));
-          displayedNumbers[cellName] = { number: null, modelName: null, isGiven: false };
+          displayedNumbers[cellName] = {
+            number: null,
+            modelName: null,
+            isGiven: false
+          };
         }
       });
     });
@@ -565,17 +685,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function colorCell(subGrid, cellName, color) {
     const targetCell = cellsGroup.getObjectByName(cellName);
-    if (targetCell) targetCell.traverse(child => { if (child.isMesh) child.material.color.setHex(color); });
+    if (targetCell) {
+      targetCell.traverse(child => {
+        if (child.isMesh) child.material.color.setHex(color);
+      });
+    }
   }
 
   function removeOldNumber(cellName) {
     const cellData = displayedNumbers[cellName];
     if (!cellData || cellData.isGiven) return;
+
     if (cellData.modelName) {
       const model = numbersGroup.getObjectByName(cellData.modelName);
       if (model) {
         numbersGroup.remove(model);
-        model.traverse((child) => { if (child.isMesh) { child.geometry.dispose(); child.material.dispose(); } });
+        model.traverse((child) => {
+          if (child.isMesh) {
+            child.geometry.dispose();
+            child.material.dispose();
+          }
+        });
       }
       cellData.number = null;
       cellData.modelName = null;
@@ -584,6 +714,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function inputNumber(number) {
     if (!selectedCell || !editableCells.has(selectedCell.cellName)) return;
+
     startTimer();
 
     const cellData = displayedNumbers[selectedCell.cellName];
@@ -593,8 +724,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const cellCoords = `${cellName.split('_')[3]}_${cellName.split('_')[4]}`;
 
     if (currentInputMode === "numbers") {
-      const v = getCellCoordinates(cellName);
-      if (!isValidSudokuMove(sudokuGrid, v.row, v.col, number)) {
+      const validationCoords = getCellCoordinates(cellName);
+      if (!isValidSudokuMove(sudokuGrid, validationCoords.row, validationCoords.col, number)) {
         const invalidFeedback = document.createElement('div');
         invalidFeedback.className = 'invalid-move-toast';
         invalidFeedback.textContent = 'Invalid move! Number already exists in row, column, or box.';
@@ -607,6 +738,7 @@ document.addEventListener('DOMContentLoaded', () => {
           transform: translateX(100%); transition: transform 0.3s ease;
         `;
         document.body.appendChild(invalidFeedback);
+
         setTimeout(() => invalidFeedback.style.transform = 'translateX(0)', 100);
         setTimeout(() => {
           invalidFeedback.style.transform = 'translateX(100%)';
@@ -615,13 +747,21 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // Clear old number + any notes
+      // Remove old number and any notes
       removeOldNumber(cellName);
+
       const notesToRemove = [];
-      notesGroup.children.forEach(note => { if (note.name.startsWith(cellName)) notesToRemove.push(note); });
+      notesGroup.children.forEach(note => {
+        if (note.name.startsWith(cellName)) notesToRemove.push(note);
+      });
       notesToRemove.forEach(note => {
         notesGroup.remove(note);
-        note.traverse((child) => { if (child.isMesh) { child.geometry.dispose(); child.material.dispose(); } });
+        note.traverse((child) => {
+          if (child.isMesh) {
+            child.geometry.dispose();
+            child.material.dispose();
+          }
+        });
       });
 
       // Add player's number (black)
@@ -631,21 +771,32 @@ document.addEventListener('DOMContentLoaded', () => {
         const part = gltf.scene;
         part.name = `${cellName}_${numberFile}`;
         part.traverse((child) => {
-          if (child.isMesh) child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(false) });
+          if (child.isMesh) {
+            child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(false) });
+          }
         });
         numbersGroup.add(part);
       });
-      displayedNumbers[cellName] = { ...displayedNumbers[cellName], number, modelName: `${cellName}_${numberFile}` };
+
+      displayedNumbers[cellName] = {
+        ...displayedNumbers[cellName],
+        number: number,
+        modelName: `${cellName}_${numberFile}`
+      };
 
       const coords = getCellCoordinates(cellName);
       sudokuGrid[coords.row][coords.col] = number;
+
       updateAutomaticNotes(cellName, number);
 
       if (checkSolution()) {
         const completionTime = gameTimer;
         updateGameStats(currentDifficulty, completionTime);
         showCelebration(completionTime);
-        setTimeout(() => startNewGame(currentDifficulty), 3000);
+
+        setTimeout(() => {
+          startNewGame(currentDifficulty);
+        }, 3000);
       }
     } else {
       // Notes mode (black)
@@ -662,13 +813,20 @@ document.addEventListener('DOMContentLoaded', () => {
       if (notesGroup.getObjectByName(fullNoteName)) {
         const model = notesGroup.getObjectByName(fullNoteName);
         notesGroup.remove(model);
-        model.traverse((child) => { if (child.isMesh) { child.geometry.dispose(); child.material.dispose(); } });
+        model.traverse((child) => {
+          if (child.isMesh) {
+            child.geometry.dispose();
+            child.material.dispose();
+          }
+        });
       } else {
         loader.load(notePath, (gltf) => {
           const part = gltf.scene;
           part.name = fullNoteName;
           part.traverse((child) => {
-            if (child.isMesh) child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(false) });
+            if (child.isMesh) {
+              child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(false) });
+            }
           });
           notesGroup.add(part);
         });
@@ -678,21 +836,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ===== Picking / selection =====
   function onPointerEvent(event) {
+    // Prevent default touch behaviors
     event.preventDefault();
+
+    // Get position from either mouse or touch event
     const pointer = event.touches ? event.touches[0] : event;
     const mouse = new THREE.Vector2();
+
+    // Correct coordinates relative to canvas
     const rect = renderer.domElement.getBoundingClientRect();
     mouse.x = ((pointer.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((pointer.clientY - rect.top) / rect.height) * 2 + 1;
 
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(mouse, camera);
+
     const intersects = raycaster.intersectObjects(cellsGroup.children, true);
     if (intersects.length > 0) {
       const intersected = intersects[0].object;
       const cellName = intersected.parent.name;
 
       if (editableCells.has(cellName)) {
+        // Reset previous highlighting
         if (selectedCell) {
           highlightRelatedCells(selectedCell.cellName, false);
           const prevSubgrid = parseInt(selectedCell.subGrid, 10);
@@ -702,6 +867,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const subGrid = cellName.split('_')[1];
         selectedCell = { subGrid, cellName };
+
+        // Highlight new selection and related cells
         colorCell(parseInt(subGrid, 10), cellName, COLORS.SELECTED_CELL);
         highlightRelatedCells(cellName, true);
       }
@@ -709,14 +876,21 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   renderer.domElement.addEventListener('click', onPointerEvent);
-  renderer.domElement.addEventListener('touchstart', onPointerEvent, { passive:false });
+  renderer.domElement.addEventListener('touchstart', onPointerEvent, { passive: false });
 
-  document.addEventListener('touchmove', (e) => { if (e.touches.length === 1) e.preventDefault(); }, { passive:false });
-  document.addEventListener('touchstart', (e) => { if (e.touches.length === 1) e.preventDefault(); }, { passive:false });
+  // Prevent unwanted touch behaviors
+  document.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 1) e.preventDefault();
+  }, { passive: false });
+  document.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) e.preventDefault();
+  }, { passive: false });
 
   window.addEventListener('keypress', (event) => {
     const key = event.key;
-    if (selectedCell && key >= '1' && key <= '9') inputNumber(parseInt(key));
+    if (selectedCell && key >= '1' && key <= '9') {
+      inputNumber(parseInt(key));
+    }
   });
 
   // Difficulty switching
