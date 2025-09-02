@@ -182,8 +182,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function generatePuzzle(difficulty = 'Beginner') {
         const difficultySettings = {
-            'Beginner': { minClues: 45, maxClues: 50 },
-            'Intermediate': { minClues: 35, maxClues: 44 }, 
+            'Beginner': { minClues: 70, maxClues: 75 },
+            'Intermediate': { minClues: 60, maxClues: 64 }, 
             'Expert': { minClues: 25, maxClues: 34 },
             'Master': { minClues: 17, maxClues: 24 }
         };
