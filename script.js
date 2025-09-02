@@ -1,5 +1,4 @@
-// script.js — no trackpad, no golf ball, original controls/logic preserved
-
+// script.js
 document.addEventListener('DOMContentLoaded', () => {
   let sudokuSolution = [];
 
@@ -26,7 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
   directionalLight.position.set(15, 25, 15);
   scene.add(directionalLight);
 
-  // Loader and groups
+  // Groups and loader
   const loader = new THREE.GLTFLoader();
   const cellsGroup = new THREE.Group();
   const bordersGroup = new THREE.Group();
@@ -44,7 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
   scene.add(cellsGroup, bordersGroup, numbersGroup, notesGroup, decorativeGroup);
 
   // ========= Pastel subgrid styles (cell background colors only) =========
-  // Numbers do NOT use these; given numbers stay red, player numbers stay black.
+  // Numbers DO NOT use these; given numbers stay red, player numbers stay black.
   const SUBGRID_STYLES = {
     1: { cell: 0xFFD1E8, givenCell: 0xFFA7C8 }, // baby pink
     2: { cell: 0xFFD8B3, givenCell: 0xFFB67F }, // peach
@@ -62,21 +61,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (style) return isGiven ? style.givenCell : style.cell;
     return isGiven ? COLORS.GIVEN_CELL : COLORS.DEFAULT_CELL;
   }
+  // Numbers: keep original palette (given = red, player = black), regardless of subgrid.
   function getNumberColor(isGiven) {
     return isGiven ? COLORS.GIVEN_NUMBER : COLORS.PLAYER_NUMBER;
   }
   // ======================================================================
 
+  // Core palette (kept as-is; tweak RELATED_CELL if you want gray instead)
   const COLORS = {
     DEFAULT_CELL: 0xFFFFFF,
     SELECTED_CELL: 0xFF8C00,
-    RELATED_CELL: 0xFFFF00, // (leave as-is; change to gray if you prefer)
-    GIVEN_NUMBER: 0x8B0000,  // red for givens
+    RELATED_CELL: 0xFFFF00, // change to 0x9CA3AF for darker gray if desired
+    GIVEN_NUMBER: 0x8B0000, // red for givens
     PLAYER_NUMBER: 0x000000, // black for player inputs
-    GIVEN_CELL: 0xD3D3D3
+    GIVEN_CELL: 0xD3D3D3     // only used if a subgrid style is missing
   };
 
-  // Controls (mouse/touch rotation)
+  // Controls (mouse/touch rotate)
   const controls = new THREE.TrackballControls(camera, renderer.domElement);
   controls.rotateSpeed = 5.0;
   controls.dynamicDampingFactor = 0.3;
@@ -106,10 +107,15 @@ document.addEventListener('DOMContentLoaded', () => {
     achievements: []
   };
 
-  // Header UI
-  const gameHeader = document.createElement('div');
-  gameHeader.className = 'game-header';
-  gameHeader.innerHTML = `
+  // -------- Right-side control panel UI --------
+  const controlPanel = document.createElement('div');
+  controlPanel.className = 'control-panel';
+  document.body.appendChild(controlPanel);
+
+  // Top row (difficulty + timer)
+  const topRow = document.createElement('div');
+  topRow.className = 'top-row';
+  topRow.innerHTML = `
     <div class="difficulty-selector">
       <button class="difficulty-btn active" data-difficulty="Beginner">Beginner</button>
       <button class="difficulty-btn" data-difficulty="Intermediate">Intermediate</button>
@@ -118,19 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
     <div class="timer-display">00:00</div>
   `;
-  document.body.appendChild(gameHeader);
-
-  // New game FAB (kept; remove if you don't want it)
-  const fab = document.createElement('button');
-  fab.className = 'fab';
-  fab.innerHTML = '🎲';
-  fab.title = 'New Game';
-  document.body.appendChild(fab);
-
-  // Control panel
-  const controlPanel = document.createElement('div');
-  controlPanel.className = 'control-panel';
-  document.body.appendChild(controlPanel);
+  controlPanel.appendChild(topRow);
 
   // Number pad
   const numberPad = document.createElement('div');
@@ -184,18 +178,17 @@ document.addEventListener('DOMContentLoaded', () => {
     return true;
   }
 
-  // Beginner: 70–75 clues
+  // Beginner has ~70–75 givens as requested earlier
   function generatePuzzle(difficulty = 'Beginner') {
     const difficultySettings = {
-      'Beginner':     { minClues: 70, maxClues: 75 },
-      'Intermediate': { minClues: 60, maxClues: 64 }, 
-      'Expert':       { minClues: 25, maxClues: 34 },
-      'Master':       { minClues: 17, maxClues: 24 }
+      'Beginner': { minClues: 70, maxClues: 75 },
+      'Intermediate': { minClues: 60, maxClues: 64 },
+      'Expert': { minClues: 25, maxClues: 34 },
+      'Master': { minClues: 17, maxClues: 24 }
     };
     const { minClues, maxClues } = difficultySettings[difficulty];
     const solution = generateValidCompleteSolution();
     const puzzle = solution.map(row => [...row]);
-
     const targetClues = minClues + Math.floor(Math.random() * (maxClues - minClues + 1));
     const cellsToRemove = 81 - targetClues;
 
@@ -209,7 +202,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const [r, c] = positions[i];
       puzzle[r][c] = 0;
     }
-    return { sudokuBoard: puzzle, sudokuSolution: solution, rating: 0 };
+
+    return { sudokuBoard: puzzle, sudokuSolution: solution, rating: (maxClues - targetClues) / (maxClues - minClues) * 4 };
   }
 
   function convertToGrid(flatArray) {
@@ -248,14 +242,21 @@ document.addEventListener('DOMContentLoaded', () => {
       timerInterval = setInterval(updateTimer, 1000);
     }
   }
-  function stopTimer() { if (timerInterval) { clearInterval(timerInterval); timerInterval = null; } gameInProgress = false; }
+  function stopTimer() {
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    gameInProgress = false;
+  }
   function updateTimer() {
     if (gameStartTime) {
       gameTimer = Math.floor((Date.now() - gameStartTime) / 1000);
-      document.querySelector('.timer-display').textContent = formatTime(gameTimer);
+      const timerEl = document.querySelector('.timer-display');
+      if (timerEl) timerEl.textContent = formatTime(gameTimer);
     }
   }
-  function formatTime(s) { const m = Math.floor(s / 60), sec = s % 60; return `${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`; }
+  function formatTime(s) {
+    const m = Math.floor(s / 60), sec = s % 60;
+    return `${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
+  }
 
   function updateGameStats(difficulty, completionTime) {
     gameStats.gamesPlayed++;
@@ -329,7 +330,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function startNewGame(difficulty = currentDifficulty) {
     stopTimer();
     gameTimer = 0;
-    document.querySelector('.timer-display').textContent = '00:00';
+    const timerEl = document.querySelector('.timer-display');
+    if (timerEl) timerEl.textContent = '00:00';
     currentDifficulty = difficulty;
     document.querySelectorAll('.difficulty-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.difficulty === difficulty);
@@ -378,14 +380,17 @@ document.addEventListener('DOMContentLoaded', () => {
   function getRelatedCells(cellName) {
     const coords = getCellCoordinates(cellName);
     const related = new Set();
+    // row
     for (let col = 0; col < 9; col++) {
       const subGrid = Math.floor(coords.row / 3) * 3 + Math.floor(col / 3) + 1;
       related.add(`Sub_${subGrid}_Cell_${(coords.row % 3) + 1}_${(col % 3) + 1}`);
     }
+    // col
     for (let row = 0; row < 9; row++) {
       const subGrid = Math.floor(row / 3) * 3 + Math.floor(coords.col / 3) + 1;
       related.add(`Sub_${subGrid}_Cell_${(row % 3) + 1}_${(coords.col % 3) + 1}`);
     }
+    // 3x3
     const sr = Math.floor(coords.row / 3) * 3;
     const sc = Math.floor(coords.col / 3) * 3;
     for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
@@ -396,7 +401,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return Array.from(related);
   }
 
-  // (matches your pasted logic: only non-given peers get the yellow highlight)
   function highlightRelatedCells(cellName, highlight = true) {
     const relatedCells = getRelatedCells(cellName);
     relatedCells.forEach(relatedCell => {
@@ -404,7 +408,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const cellData = displayedNumbers[relatedCell];
         if (!cellData?.isGiven) {
           const subgrid = parseInt(relatedCell.split('_')[1], 10);
-          colorCell(subgrid, relatedCell, highlight ? COLORS.RELATED_CELL : getBaseCellColorFor(subgrid, false));
+          colorCell(
+            subgrid,
+            relatedCell,
+            highlight ? COLORS.RELATED_CELL : getBaseCellColorFor(subgrid, false)
+          );
         }
       }
     });
@@ -425,6 +433,95 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function eraseCell(cellName) {
+    const cellData = displayedNumbers[cellName];
+    if (!cellData || cellData.isGiven) return;
+    removeOldNumber(cellName);
+    const notesToRemove = [];
+    notesGroup.children.forEach(note => { if (note.name.startsWith(cellName)) notesToRemove.push(note); });
+    notesToRemove.forEach(note => {
+      notesGroup.remove(note);
+      note.traverse((child) => { if (child.isMesh) { child.geometry.dispose(); child.material.dispose(); } });
+    });
+    const coords = getCellCoordinates(cellName);
+    sudokuGrid[coords.row][coords.col] = null;
+  }
+
+  // Load parts and start
+  Promise.all([ fetch('partsList.json').then(r => r.json()) ])
+    .then(([partsListData]) => {
+      const { borders, cells } = partsListData;
+
+      borders.forEach(border => {
+        loader.load(`assets/Borders/${border}.gltf`, (gltf) => {
+          const part = gltf.scene; part.name = border; bordersGroup.add(part);
+        });
+      });
+
+      // Cells get base NON-GIVEN color per subgrid
+      cells.forEach(cell => {
+        loader.load(`assets/Cells/${cell}.gltf`, (gltf) => {
+          const part = gltf.scene; part.name = cell;
+          part.traverse((child) => {
+            if (child.isMesh) {
+              const subgrid = parseInt(cell.split('_')[1], 10);
+              const baseColor = getBaseCellColorFor(subgrid, false);
+              child.material = new THREE.MeshLambertMaterial({ color: baseColor });
+            }
+          });
+          cellsGroup.add(part);
+        });
+      });
+
+      // Start after a short load delay
+      setTimeout(() => {
+        startNewGame('Beginner');
+      }, 1000);
+    })
+    .catch(error => console.error('Error loading game data:', error));
+
+  function loadGameWithData(gameData) {
+    const { sudokuBoard } = gameData;
+    fetch('partsList.json').then(r => r.json()).then(partsListData => {
+      const { cells } = partsListData;
+      setupSudokuMechanics(cells, sudokuBoard);
+    });
+  }
+
+  function setupSudokuMechanics(cells, sudokuBoard) {
+    sudokuBoard.forEach((row, rowIndex) => {
+      row.forEach((cell, colIndex) => {
+        const subGrid = Math.floor(rowIndex / 3) * 3 + Math.floor(colIndex / 3) + 1;
+        const cellName = `Sub_${subGrid}_Cell_${(rowIndex % 3) + 1}_${(colIndex % 3) + 1}`;
+        const cellCoords = `${(rowIndex % 3) + 1}_${(colIndex % 3) + 1}`;
+
+        if (cell !== 0) {
+          // GIVEN number: keep numbers red, cell darker shade for that subgrid
+          const numberFile = `Number_${cell}`;
+          const numberPath = `assets/Numbers/${subGrid}/Cell_${cellCoords}/${numberFile}.gltf`;
+          loader.load(numberPath, (gltf) => {
+            const part = gltf.scene;
+            part.name = `${cellName}_${numberFile}`;
+            part.traverse((child) => {
+              if (child.isMesh) {
+                child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(true) }); // red
+              }
+            });
+            numbersGroup.add(part);
+          });
+
+          colorCell(subGrid, cellName, getBaseCellColorFor(subGrid, true));
+          displayedNumbers[cellName] = { number: cell, modelName: `${cellName}_${numberFile}`, isGiven: true };
+        } else {
+          // EDITABLE cell: base (lighter) shade for that subgrid
+          editableCells.add(cellName);
+          colorCell(subGrid, cellName, getBaseCellColorFor(subGrid, false));
+          displayedNumbers[cellName] = { number: null, modelName: null, isGiven: false };
+        }
+      });
+    });
+  }
+
   function colorCell(subGrid, cellName, color) {
     const targetCell = cellsGroup.getObjectByName(cellName);
     if (targetCell) targetCell.traverse(child => { if (child.isMesh) child.material.color.setHex(color); });
@@ -442,22 +539,6 @@ document.addEventListener('DOMContentLoaded', () => {
       cellData.number = null;
       cellData.modelName = null;
     }
-  }
-
-  function eraseCell(cellName) {
-    const cellData = displayedNumbers[cellName];
-    if (!cellData || cellData.isGiven) return;
-    removeOldNumber(cellName);
-
-    const notesToRemove = [];
-    notesGroup.children.forEach(note => { if (note.name.startsWith(cellName)) notesToRemove.push(note); });
-    notesToRemove.forEach(note => {
-      notesGroup.remove(note);
-      note.traverse((child) => { if (child.isMesh) { child.geometry.dispose(); child.material.dispose(); } });
-    });
-
-    const coords = getCellCoordinates(cellName);
-    sudokuGrid[coords.row][coords.col] = null;
   }
 
   function inputNumber(number) {
@@ -502,19 +583,20 @@ document.addEventListener('DOMContentLoaded', () => {
         note.traverse((child) => { if (child.isMesh) { child.geometry.dispose(); child.material.dispose(); } });
       });
 
-      // Add new number (player): black
+      // Add new number (player): keep black
       const numberFile = `Number_${number}`;
       const numberPath = `assets/Numbers/${subGrid}/Cell_${cellCoords}/${numberFile}.gltf`;
       loader.load(numberPath, (gltf) => {
         const part = gltf.scene;
         part.name = `${cellName}_${numberFile}`;
         part.traverse((child) => {
-          if (child.isMesh) child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(false) });
+          if (child.isMesh) child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(false) }); // black
         });
         numbersGroup.add(part);
       });
       displayedNumbers[cellName] = { ...displayedNumbers[cellName], number, modelName: `${cellName}_${numberFile}` };
 
+      // Update grid and notes
       const coords = getCellCoordinates(cellName);
       sudokuGrid[coords.row][coords.col] = number;
       updateAutomaticNotes(cellName, number);
@@ -526,7 +608,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => startNewGame(currentDifficulty), 3000);
       }
     } else {
-      // Notes mode: black
+      // Notes mode: still keep notes in player color (black)
       if (displayedNumbers[cellName].number !== null) {
         removeOldNumber(cellName);
         const coords = getCellCoordinates(cellName);
@@ -545,7 +627,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const part = gltf.scene;
           part.name = fullNoteName;
           part.traverse((child) => {
-            if (child.isMesh) child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(false) });
+            if (child.isMesh) child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(false) }); // black
           });
           notesGroup.add(part);
         });
@@ -553,7 +635,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Pointer picking
+  // Pointer picking (click/tap to select cell)
   function onPointerEvent(event) {
     event.preventDefault();
     const pointer = event.touches ? event.touches[0] : event;
@@ -589,93 +671,24 @@ document.addEventListener('DOMContentLoaded', () => {
   renderer.domElement.addEventListener('click', onPointerEvent);
   renderer.domElement.addEventListener('touchstart', onPointerEvent, { passive: false });
 
-  // (Removed global document touch blockers to avoid interaction/focus issues)
-  // window.addEventListener('touchmove'...) — deleted
-  // window.addEventListener('touchstart'...) — deleted
+  // Prevent page scroll on single-finger touch over canvas
+  document.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 1) e.preventDefault();
+  }, { passive: false });
+  document.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) e.preventDefault();
+  }, { passive: false });
 
+  // Keyboard input
   window.addEventListener('keypress', (event) => {
     const key = event.key;
     if (selectedCell && key >= '1' && key <= '9') inputNumber(parseInt(key));
   });
 
+  // Difficulty buttons
   document.querySelectorAll('.difficulty-btn').forEach(btn => {
     btn.addEventListener('click', () => startNewGame(btn.dataset.difficulty));
   });
-  fab.addEventListener('click', () => startNewGame(currentDifficulty));
-
-  // Load parts and start
-  Promise.all([ fetch('partsList.json').then(r => r.json()) ])
-    .then(([partsListData]) => {
-      const { borders, cells } = partsListData;
-
-      borders.forEach(border => {
-        loader.load(`assets/Borders/${border}.gltf`, (gltf) => {
-          const part = gltf.scene; part.name = border; bordersGroup.add(part);
-        });
-      });
-
-      // Load cells with the base NON-GIVEN color for each subgrid
-      cells.forEach(cell => {
-        loader.load(`assets/Cells/${cell}.gltf`, (gltf) => {
-          const part = gltf.scene; part.name = cell;
-          part.traverse((child) => {
-            if (child.isMesh) {
-              const subgrid = parseInt(cell.split('_')[1], 10);
-              const baseColor = getBaseCellColorFor(subgrid, false);
-              child.material = new THREE.MeshLambertMaterial({ color: baseColor });
-            }
-          });
-          cellsGroup.add(part);
-        });
-      });
-
-      setTimeout(() => {
-        startNewGame('Beginner');
-      }, 1000);
-    })
-    .catch(error => console.error('Error loading game data:', error));
-
-  function loadGameWithData(gameData) {
-    const { sudokuBoard } = gameData;
-    fetch('partsList.json').then(r => r.json()).then(partsListData => {
-      const { cells } = partsListData;
-      setupSudokuMechanics(cells, sudokuBoard);
-    });
-  }
-
-  function setupSudokuMechanics(cells, sudokuBoard) {
-    sudokuBoard.forEach((row, rowIndex) => {
-      row.forEach((cell, colIndex) => {
-        const subGrid = Math.floor(rowIndex / 3) * 3 + Math.floor(colIndex / 3) + 1;
-        const cellName = `Sub_${subGrid}_Cell_${(rowIndex % 3) + 1}_${(colIndex % 3) + 1}`;
-        const cellCoords = `${(rowIndex % 3) + 1}_${(colIndex % 3) + 1}`;
-
-        if (cell !== 0) {
-          // GIVEN number: red; cell darker shade
-          const numberFile = `Number_${cell}`;
-          const numberPath = `assets/Numbers/${subGrid}/Cell_${cellCoords}/${numberFile}.gltf`;
-          loader.load(numberPath, (gltf) => {
-            const part = gltf.scene;
-            part.name = `${cellName}_${numberFile}`;
-            part.traverse((child) => {
-              if (child.isMesh) {
-                child.material = new THREE.MeshLambertMaterial({ color: getNumberColor(true) });
-              }
-            });
-            numbersGroup.add(part);
-          });
-
-          colorCell(subGrid, cellName, getBaseCellColorFor(subGrid, true));
-          displayedNumbers[cellName] = { number: cell, modelName: `${cellName}_${numberFile}`, isGiven: true };
-        } else {
-          // EDITABLE cell: lighter shade
-          editableCells.add(cellName);
-          colorCell(subGrid, cellName, getBaseCellColorFor(subGrid, false));
-          displayedNumbers[cellName] = { number: null, modelName: null, isGiven: false };
-        }
-      });
-    });
-  }
 
   // Resize
   window.addEventListener('resize', () => {
@@ -699,5 +712,3 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   animate();
 });
-
-// (Removed: window.createUIGolfBall and the fallback golf-ball injection)
